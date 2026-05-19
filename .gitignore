@@ -1,9 +1,18 @@
 #Specific files
-01_Raw_data/Query_data/
+01_Raw_data
+04_Databases
+06_Graphs
+99_Query_calanoida
 
+#User-specific files
 .Rproj.user
-.Rhistory
-.RData
 .Ruserdata
 
+# History files
+.Rhistory
+
+#Session data files
+.RData
+
+#Mac generated files
 .DS_Store
