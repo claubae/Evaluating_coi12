@@ -1,4 +1,9 @@
+#Specific files
+01_Raw_data/Query_data/
+
 .Rproj.user
 .Rhistory
 .RData
 .Ruserdata
+
+.DS_Store

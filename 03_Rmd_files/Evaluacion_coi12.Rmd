@@ -1,0 +1,96 @@
+---
+title: "Evaluacion_coi12"
+output: html_document
+date: "`r Sys.Date()`"
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+**Descripción problema**
+
+Cuando la secuencia pregunta (COI) no encuentra un match exacto en la
+base de datos, se espera que en función del porcentaje de identidad
+obtenido la resolución sea mayor o menor (es decir, un nivel taxonómico
+más preciso como género o familia, o algo menos preciso como orden,
+clase, filo...). Sin embargo se ha visto que el marcador COI mantiene
+asignaciones a niveles con alta resolución (género o especie) a pesar de
+la falta de cobertura en la base de datos empleada, indicando una
+posible sobreasignación (tal como se ha visto en el TFG de Alba),
+probablemente errónea. Con la base de datos reducida esperamos, al haber
+eliminado la tercera base de cada codón, aumentar el pident. Con ello
+esperamos asignaciones taxonómicas con mayor resolución (es decir,
+aumentar el nº de asignaciones a nivel de género o familia) incluso
+cuando la secuencia pregunta no se encuentra previamente en ninguna base
+de datos (y lógicamente que esa asignación sea correcta).
+
+**Parámetros a medir**
+
+1.  [Especificidad]{.underline} de la base de datos 12: La secuencia
+    problema corresponde a un solo clado. Es importante verificar si la
+    eliminación de la tercera base impide distinguir entre dos especies
+    cercanas. Para ello sería importante calcular la distancia (en %)
+    antes y después de la modificación, y ver si se vuelven idénticas-\>
+    si alcanzan un % que hace que se confundan como coespecíficas.
+
+Maneras de medir la especificidad:
+
+-   Contar el nº de secuencias distintas en la base de datos antes y
+    después de la modificación. Si el nº disminuye sabemos que la
+    especificidad se está viendo comprometida (y podemos cuantificarlo).
+    Usando grep
+    (<https://www.reddit.com/r/labrats/comments/dvwid8/anyone_know_a_simple_way_to_count_the_number_of>)
+    se podría hacer esto, aunque no se obtendría información concreta
+    sobre qué especies "solapan". Igual antes de hacer eso se podría
+    mantener una única secuencia por encabezado de manera a evitar
+    duplicados desde el principio.
+
+-   [Precisión]{.underline} de la asignación: Capacidad de colocar una
+    secuencia en el clado correcto-\> ¿Con qué frecuencia se asigna
+    correctamente un clado a una secuencia (idd del nivel taxonómico de
+    resolución)?
+
+Cómo medir la capacidad del código para realizar una asignación
+correcta:
+
+-   Se tiene que tener una base de datos con la totalidad de las
+    secuencias sin modificación (para poder verificar que la asignación
+    ha sido correcta), otra base de datos donde se eliminan las
+    secuencias objetivo y sin la modificación y otra donde se eliminan
+    las secuencias objetivo y con la modificación (es decir, coi12).
+
+-   Tenemos antes que definir la taxonomía verdadera de las secuencias
+    problema que le daremos al programa-\> usando get_lineage como en el
+    TFG de Alba.
+
+-   
+
+**Otros métodos de utilización**
+
+\-[Método de utilización]{.underline} (BLAST u otra aprox). Otros
+métodos de asignación taxonómica podrían ser los k-meros.
+
+**Diseño experimental**
+
+Preparación db: Verificar marco de lectura y realizar db 12. Tras ver
+que la mayoría de secuencias tienen marco de lectura 2, se puede
+plantear eliminar esas secuencias que no lo cumplen (¿?) ya que podrían
+corresponder a NUMTS.
+
+Habría también que preparar otra db 123, eliminando los primers usando
+cutadapt de misma manera que se hizo con la db de Calanoida.
+
+[Bloqueos taxonómicos progresivos]{.underline}: Escogiendo un par de
+especies como prueba, quitar las secuencias que corresponden a esa
+especie, luego secuencias que corresponden al género al cual pertenece
+la especie, luego la familia y así succesivamente... Para ello habría
+entonces que generar un archivo blocked_taxid con el taxón de interés.
+La capacidad del código para asignar el clado correcto podrá hacerse
+siguiendo la misma metodología que Alba en su TFG.
+
+26/11/2025
+
+Estando ya disponibles las bases de datos de MIDORI en formato para
+BLAST las descargué y las formatearé siguiendo las instrucciones del TFG
+de Alba. De esta manera también evitaremos duplicados (es decir, para
+cada header tendremos una única secuencia).

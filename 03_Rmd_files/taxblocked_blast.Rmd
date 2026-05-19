@@ -1,0 +1,119 @@
+---
+title: "BLAST con bloqueo taxonómico"
+output: html_notebook
+params:
+  experiment_list: "../Query_calanoida/experiment_list_123.csv"
+    #value: "experiment_list_123.csv"
+    #Cambiar este parámetro cuando se vaya a hacer el blast para 12.
+  output_dir: "blast_output"
+    #value: "blast_output"
+---
+
+```{r setup}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(here)
+```
+
+```{r load data}
+experiment_list <- read_csv(params$experiment_list)
+```
+
+Igual habría que cambiar el path to script dentro de experiments list.
+```{r}
+experiment_list <- experiment_list %>%
+  mutate(files = file.path("..", "data", "data123", files)) ## Cuidado con esta syntaxis pq si ejecutas el chunk 2 veces te sale una ruta imposible. 
+```
+
+
+Este es el script: 
+```{bash}
+#!/bin/bash
+#SBATCH --job-name=blast_array_mido
+#SBATCH --mail-user=claudia.baeyens@estudiante.uam.es 
+#SBATCH --output=/home/cbaeyens/03_blast_results/123/job_%j.out # %j añade el ID del trabajo para no sobreescribir logs
+#SBATCH --mem=8G  
+#SBATCH --cpus-per-task=4
+hostname
+
+startTime=$(date +%s)
+
+#--Set environment
+input_file=$1
+input_taxid=$2
+database=$3
+blocked_taxID=$4
+output_folder=$5
+cores=$6
+
+outfile="${output_folder}/123/output_${input_taxid}_blocked_${blocked_taxID}.txt"
+
+echo "This script will run blast on $input_file (taxID: $input_taxid) with $cores cores, blocking this taxID: $blocked_taxID and write the output in $output_folder"
+
+cd "$output_folder"
+    
+
+#--Run programs
+
+echo $(date +%H:%M) "BLASTing..."
+cd $output_folder
+blastn \
+-query $input_file \
+-db $database \
+-num_threads $cores \
+-perc_identity 80 \
+-negative_taxids $blocked_taxID \
+-word_size 11 \
+-max_target_seqs 1000 \
+-outfmt "6 qseqid sseqid qlen slen pident mismatch evalue length staxids" \
+-out "$outfile" 2> "${output_folder}/error_${input_taxid}.log"
+
+echo "BLAST finished. Result in: $outfile"
+echo "It took $(expr $(date +%s) - $startTime) seconds"
+
+echo "output file has "
+wc -l output.txt
+echo "lines"
+echo
+echo "It took $(expr `date +%s` - $startTime) seconds"
+   
+```
+
+
+En el cluster se escribe Rscript 01_Scripts/run_blast_blocked.R
+```{r lanzar script blastn}
+library(here)
+library(purrr)
+
+base_path <- here()
+input_folder <- here("02_Data", "123")
+input_file <- list.files(path= input_folder,
+                         pattern= "\\.fasta$",
+                         full.names = TRUE)
+database <- "/home/meg/dbs/midori_123"
+output_dir<-here("03_blast_results", "123")
+experiment_list_123 <- read.csv(here("02_Data", "123", "experiment_list_123.csv"))
+cores_per_blast <- 4
+pwalk(list(experiment_list_123$files,
+           experiment_list_123$taxID_query,
+           experiment_list_123$blocked_taxID),
+function(file, taxID, blocked_taxID) {
+  ruta_completa <- file.path(input_folder, file)
+  path_to_script <- here::here("01_Scripts", "blast_ccc_mido.sh") 
+  archivo_abs <- normalizePath(ruta_completa, mustWork = TRUE)
+  output_abs <- normalizePath(output_dir, mustWork = FALSE)
+  cmd <- paste("sbatch", path_to_script, 
+               archivo_abs, 
+               taxID, 
+               database,
+               blocked_taxID,
+               output_abs,
+               cores_per_blast)
+  message("Ejecutando BLAST para : ", taxID) 
+  message(cmd)  
+  system (cmd)
+  
+})
+```
+
+

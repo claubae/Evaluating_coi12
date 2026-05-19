@@ -1,0 +1,143 @@
+---
+title: "Reformateo_midori"
+output: html_document
+date: "`r Sys.Date()`"
+---
+
+Tras descargar la base de datos de COI desde MIDORI en formato BLAST, hay que reformatear la base de datos. Primero lo pasamos a formato oneline.
+
+```{bash}
+#Usage: bash Scripts/oneline_fasta.sh input.file output.file
+# First acitvate the conda environment for seqkit in the terminal
+seqkit seq -w0 raw_data_CO1_uniq_midori/Sequences_for_blast/MIDORI2_UNIQ_NUC_GB268_CO1_BLAST.fasta > raw_data_CO1_uniq_midori/midori_blast_format/midori_oneline.fasta
+```
+
+Posteriormente se limpia el header.Se recomienda una información mínima en los headers. Se mantiene el accession number y el taxid, separados por ";".
+
+```{bash}
+#!usr/bin/env bash
+#Usage: bash Scripts/clean_header.sh input_file.fasta output_file.fasta
+#Lo que quiero hacer con este script es limpiar el header: mantener solamente el accession number y el taxid
+INPUT_FILE="$1"
+OUTPUT_FILE="$2"
+awk -F'[.;_]' '
+    /^>/ {
+        print $1, $NF
+    } 
+    !/^>/ {
+        print $0
+    }
+' OFS=";taxid=" "$INPUT_FILE" > "$OUTPUT_FILE"
+```
+
+Tras esto hay que recortar los primers usando cutadapt. Lo que vamos a hacer es recortar en todos los primers forward y eliminar esas secuencias que no lo tengan, de manera que todas las secuencias empiecen "igual" y podamos leer correctamente el marco de lectura. Luego borraremos lo que va después del primer reverse (incluyendo el propio primer reverse), pero manteniendo las secuencias que no lo tengan (lo que nos importa es que las secuencias empiecen igual).
+
+```{bash}
+#!usr/bin/bash
+
+# First acitvate the conda environment with cutadapt
+
+# Looks for the Leray Fwd sequence in a database, then removes it so all sequences are in the same frame
+#Usage: bash <path_to_script> <fasta_file_db> <output_folder>
+
+LERAY_FWD=GGWACWGGWTGAACWGTWTAYCCYCC
+
+INPUT_FASTA=$1
+
+OUTPUT_FOLDER=$2
+
+cutadapt -g ""${LERAY_FWD}";min_overlap=24" \
+"${INPUT_FASTA}" -o "${OUTPUT_FOLDER}"/trimmed.fasta -e 4 -rc \
+--untrimmed-output "${OUTPUT_FOLDER}"/untrimmed.fasta
+
+#Ahora queremos quitar el primer reverse pero sin necesariamente borrar las secuencias donde no se encuentra ese primer:
+
+#!usr/bin/env bash
+
+# First acitvate the conda environment with cutadapt (mirar fichita)
+#Usage: bash Scripts/trimmed_rev_calanoida.sh input_file.fasta output_folder
+#Looks for the Leray Rev sequence in a database, then removes it but keep the sequences that do not have it.
+
+LERAY_RV=TGATTTTTTGGTCACCCTGAAGTTTA
+INPUT_FASTA=$1
+OUTPUT_FOLDER=$2
+
+cutadapt \
+  -a "${LERAY_RV};min_overlap=24" \
+  -e 4 \
+  -o "${OUTPUT_FOLDER}/trimmed_rev_reverse.fasta" \
+  "$INPUT_FASTA"
+
+```
+
+Una vez que hayamos quitado los primers, es importante también mantener una sola secuencia por header para evitar duplicados-> evitar sobrerepresentación de ciertas secuencias/ especies en una base de datos y carga computacional innecesaria. Primero creamos un tibble con 4 columnas: el header completo, el accession, el taxid y la secuencia. Luego eliminamos los duplicados según secuencia y según taxid.  
+
+```{r}
+library(tidyverse)
+library(eDNAfuns)
+library(here)
+midori_fasta <- fasta_reader(here("Prueba/clean.fasta"))
+midori_intermediate <- midori_fasta |>
+  separate(
+    col=header, 
+    into=c("accession", "taxid"), 
+    sep="taxid=",
+    remove=FALSE
+) |>
+mutate(accession=str_remove(accession, "^>|;"))
+midori_reformatted <- midori_intermediate
+midori_reformatted <- midori_reformatted |>
+  group_by(accession) |>
+slice(1)
+midori_reformatted <- midori_reformatted|> 
+  ungroup() |>
+  mutate(new_header=paste0(accession, "_", taxid))
+```
+Ahora guardamos el archivo generado con el nuevo header:
+
+```{r}
+midori_reformatted |>
+  fasta_writer(sequence = seq,
+               header= new_header,
+               file.out=here("Prueba/midori_123.fasta"))
+```
+Realizamos un taxmap para realizar la base de datos local a posteriori:
+
+```{r}
+midori_reformatted|>
+  ungroup() |>
+  select(accession, taxid) |>
+  write_delim(file=here("Prueba/taxmap.txt"), col_names=FALSE)
+```
+
+Tras hacer el taxmap, voy a eliminar el taxid del header para hacer más ligero el archivo fasta (le pido que elimine todo lo que hay detrás del "_")
+
+```{bash}
+INPUT_FILE="$1"
+OUTPUT_FILE="$2"
+sed 's/[_].*//' "$INPUT_FILE" > "$OUTPUT_FILE"
+```
+
+Ahora se vuelve a generar las bases 12 tanto para el archivo que solo tiene Calanoida (nuestro query) como para el archivo que tiene todas las secuencias COI extraídas de MIDORI, de manera a que tengan el mismo formato para realizar el BLAST.
+
+```{bash}
+#Usage: bash Scripts/Generate_coi12 input.fasta output.fasta
+INPUT_FILE="$1"
+OUTPUT_FILE="$2"
+awk '/^>/ {print; next} {for (i=2; i<=length($0); i++) if (i % 3 != 1) printf "%s", substr($0, i, 1); printf "\n"}' "$INPUT_FILE" > "$OUTPUT_FILE"
+```
+
+Ahora que se tienen los archivos fasta 123 y 12, se generarán 2 bases de datos locales para BLAST.
+
+```{bash}
+#Este script es para generar una base de datos local para BLAST
+#Usage: First activate the blast environment. bash Scripts/Makelocaldb.sh input.fasta output.file
+INPUT_FILE="$1"
+OUTPUT_FILE="$2" 
+makeblastdb -in "$INPUT_FILE" \
+            -dbtype nucl \
+            -out "$OUTPUT_FILE" \
+            -parse_seqids \
+            -taxid_map "db/taxmap.txt"
+```
+

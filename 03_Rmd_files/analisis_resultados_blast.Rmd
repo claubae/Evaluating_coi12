@@ -1,0 +1,533 @@
+---
+title: "analisis_estadísticos_resultados_blast"
+output: html_document
+date: "2026-03-31"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(here)
+library(tidyverse)
+library(insect)
+library(taxonomizr)
+library(spider)
+library(ape)
+```
+
+# Usage: Rscript parse_blast.r <blast_output>
+
+```{blast generar lineages.txt}
+#Para cada carpeta generamos un archivo lineages.txt que luego concatenamos ya que solo nos interesa tener uno. 
+awk '{print $9}' 03_blast_results/123/output_*  | sort | uniq | taxonkit  reformat -I 1 -f "{K};{p};{c};{o};{f};{g};{s}" > lineages_123.txt 
+awk '{print $9}' 03_blast_results/12/output_*  | sort | uniq | taxonkit  reformat -I 1 -f "{K};{p};{c};{o};{f};{g};{s}" > lineages_12.txt 
+lineages_123.txt lineages_12.txt | sort -u > all_lineages.txt
+```
+
+
+Para leer los archivos RDS:
+
+```{r read RDS files}
+#Estos son los archivos rds antes del LCA -> pidents
+join_123_all <- readRDS(here("05_blast_results/join_123_all_v2.rds"))
+join_123_all <- join_123_all |> 
+  mutate(across(c(qlen, slen, length, evalue, pident, bitscore), as.numeric))
+
+
+join_12_all <- readRDS(here("05_blast_results/join_12_all_v3.rds"))
+join_12_all <- join_12_all |> 
+  mutate(across(c(qlen, slen, length, evalue, pident, bitscore), as.numeric)) 
+
+#Los archivos después del LCA -> comparar precisión taxonómica + bitscores
+join_123 <- read_csv(here("05_blast_results/join_good_123.csv"))
+join_123 <- join_123 |> 
+  mutate(across(c(qlen, slen, length, evalue, pident, bitscore), as.numeric))
+
+join_12 <- read_csv(here("05_blast_results/join_good_123.csv"))
+join_12 <- join_12 |> 
+  mutate(across(c(qlen, slen, length, evalue, pident, bitscore), as.numeric)) 
+
+
+```
+
+```{r obsevaciones de datos raros}
+rare_cases_12 <- join_12_all |> 
+  filter(precision=="phylum") |> 
+  filter(pident>90)
+
+species_blocked <- join_12_all |> 
+  filter(blocked_rank == "species") |> 
+  filter(pident>90)
+
+no_species_blocked <- join_12_all |> 
+  filter(!blocked_rank == "species") |>
+  filter(pident>90)
+
+class_research <- join_12_all |>
+    filter(blocked_rank == "class", precision == "Worse") |>
+    select(qseqid, pident, assigned_species, assigned_genus, assigned_family, 
+          assigned_order, true_family, true_order) |>
+    arrange(desc(pident)) 
+
+family_research <- join_12_all |>
+    filter(blocked_rank == "family", precision == "Worse") |>
+    select(qseqid, pident, assigned_species, assigned_genus, assigned_family, 
+            assigned_order, true_family, true_order) |>
+    arrange(desc(pident)) 
+
+
+#Mirar lo mismo para 123:
+rare_cases_123 <- join_123_all |> 
+  filter(precision=="phylum") |> 
+  filter(pident>90)
+
+no_species_blocked_123 <- join_123_all |> 
+  filter(!blocked_rank == "species") |>
+  filter(pident>90)
+
+join_123_all |>
+    filter(blocked_rank == "class", precision == "Worse") |>
+    select(qseqid, pident, assigned_species, assigned_genus, assigned_family, 
+          assigned_order, true_family, true_order) |>
+    arrange(desc(pident)) -> class_research_123
+
+join_123_all |>
+    filter(blocked_rank == "family", precision == "Worse") |>
+    select(qseqid, pident, assigned_species, assigned_genus, assigned_family, 
+            assigned_order, true_family, true_order) |>
+    arrange(desc(pident)) -> family_research_123
+```
+
+
+Con los resultados completos (antes del LCA), podemos hacer unos boxplots para comparar los pidents entre 123 y 12:
+
+```{r boxplots pidents para db 12}
+join_12_all <- join_12_all |> 
+  mutate(precision=case_when(
+    precision == "Worse"   ~ "Unassigned",
+    precision=="kingdom" ~ "Worse",
+    .default=precision))
+  
+blocked_to_next_level <- c(
+  "species" = "genus",
+  "genus"   = "family",
+  "family"  = "order",
+  "order"   = "class",
+  "class"   = "phylum"
+)
+
+precision_levels <- c("genus", "family", "order", "class", "phylum", "Worse", "Unassigned")
+
+plot_data_12 <- join_12_all |>
+  filter(!is.na(pident), !is.na(blocked_rank), !is.na(precision)) |>
+  mutate(
+    pident       = as.numeric(pident),
+    blocked_rank = factor(blocked_rank, levels = names(blocked_to_next_level)),
+    next1        = unname(blocked_to_next_level[as.character(blocked_rank)]),
+    precision_group = if_else(precision == next1, next1, "Worse"),
+    precision_group = factor(precision_group, levels = c("genus", "family", "order", "class", "phylum", "Worse", "Unassigned"))
+  )
+
+ggplot(plot_data_12, aes(x = blocked_rank, y = pident, fill = precision_group)) +
+  geom_boxplot(outlier.size = 0.5, outlier.alpha = 0.4, width = 0.6,
+               position = position_dodge(width = 0.75)) +
+  scale_fill_manual(
+    values = c(
+      "genus"  = "darkolivegreen3",
+      "family" = "lightskyblue2",
+      "order"  = "plum1",
+      "class"  = "sienna1",
+      "phylum" = "yellow3",
+      "Worse"  = "#E05C5C"
+    ),
+    name = "Precisión"
+  ) +
+  scale_y_continuous(limits = c(80, 100), breaks = seq(80, 100, by = 5)) +
+  labs(
+    x     = "Rango bloqueado",
+    y     = "pident (%)"
+  ) +
+  theme_bw(base_size = 12) +
+  theme(
+    legend.position  = "right",
+    panel.grid.minor = element_blank()
+  )
+
+ggsave(here("boxplot_pident_12.pdf", width = 14, height = 8, dpi = 300))
+```
+
+```{r boxplots pident para db 123}
+join_123_all <- join_123_all |> 
+  mutate(precision=case_when(
+    precision == "Worse"   ~ "Unassigned",
+    precision=="kingdom" ~ "Worse",
+    .default=precision))
+  
+blocked_to_next_level <- c(
+  "species" = "genus",
+  "genus"   = "family",
+  "family"  = "order",
+  "order"   = "class",
+  "class"   = "phylum"
+)
+
+precision_levels <- c("genus", "family", "order", "class", "phylum", "Worse", "Unassigned")
+
+plot_data_123 <- join_123_all |>
+  filter(!is.na(pident), !is.na(blocked_rank), !is.na(precision)) |>
+  mutate(
+    pident       = as.numeric(pident),
+    blocked_rank = factor(blocked_rank, levels = names(blocked_to_next_level)),
+    next1        = unname(blocked_to_next_level[as.character(blocked_rank)]),
+    precision_group = if_else(precision == next1, next1, "Worse"),
+    precision_group = factor(precision_group, levels = c("genus", "family", "order", "class", "phylum", "Worse", "Unassigned"))
+  )
+
+ggplot(plot_data_123, aes(x = blocked_rank, y = pident, fill = precision_group)) +
+  geom_boxplot(outlier.size = 0.5, outlier.alpha = 0.4, width = 0.6,
+               position = position_dodge(width = 0.75)) +
+  scale_fill_manual(
+    values = c(
+      "genus"  = "darkolivegreen3",
+      "family" = "lightskyblue2",
+      "order"  = "plum1",
+      "class"  = "sienna1",
+      "phylum" = "yellow3",
+      "Worse"  = "#E05C5C"
+    ),
+    name = "Precisión"
+  ) +
+  scale_y_continuous(limits = c(80, 100), breaks = seq(80, 100, by = 5)) +
+  labs(
+    x     = "Rango bloqueado",
+    y     = "pident (%)"
+  ) +
+  theme_bw(base_size = 12) +
+  theme(
+    legend.position  = "right",
+    panel.grid.minor = element_blank()
+  )
+
+ggsave(here("boxplot_pident_123.pdf", width = 14, height = 8, dpi = 300))
+```
+
+
+```{r hacer unas gráficas rápidas}
+join_123 <- join_123 |>
+  mutate(precision=case_when(
+    precision == "Worse"   ~ "Unassigned",
+    precision=="kingdom" ~ "Worse",
+    .default=precision))
+df_counts_123 <- join_123 |> 
+  mutate(across(c(pident, evalue), as.numeric)) |> 
+  
+  filter(!(blocked_rank == "genus" & precision == "species")) |> 
+  
+  count(blocked_rank, precision) |> 
+  mutate(
+    precision = factor(precision, levels = c("species", "genus", "family", "order", "class", "phylum", "Worse", "Unassigned")),
+    blocked_rank = factor(blocked_rank, levels = c("no_block", "species", "genus", "family", "order", "class"))
+  ) |> 
+
+  filter(!is.na(precision)) |> 
+  filter(!is.na(blocked_rank)) |> 
+  mutate(
+    precision = forcats::fct_drop(precision),
+    blocked_rank = forcats::fct_drop(blocked_rank)
+  )
+  
+
+ggplot(df_counts_123, aes(x = blocked_rank, y = n, fill = precision)) +
+  geom_col() + 
+  theme_minimal() +
+  labs(
+    x = "Rango Bloqueado",
+    y = "Número de resultados",
+    fill = "Precisión alcanzada"
+  ) +
+  scale_x_discrete(drop = TRUE) +
+  scale_fill_brewer(palette = "Spectral", drop = TRUE)
+ggsave(here("06_Graphs/apilado_123.pdf"))
+
+```
+
+```{r}
+join_12 <- join_12 |>
+  mutate(precision=case_when(
+    precision == "Worse"   ~ "Unassigned",
+    precision=="kingdom" ~ "Worse",
+    .default=precision))
+df_counts_12 <- join_12 |> 
+  mutate(across(c(pident, evalue), as.numeric)) |> 
+  
+  filter(!(blocked_rank == "genus" & precision == "species")) |> 
+  
+  count(blocked_rank, precision) |> 
+  mutate(
+    precision = factor(precision, levels = c("species", "genus", "family", "order", "class", "phylum", "Worse", "Unassigned")),
+    blocked_rank = factor(blocked_rank, levels = c("no_block", "species", "genus", "family", "order", "class"))
+  ) |> 
+
+  filter(!is.na(precision)) |> 
+  filter(!is.na(blocked_rank)) |> 
+  mutate(
+    precision = forcats::fct_drop(precision),
+    blocked_rank = forcats::fct_drop(blocked_rank)
+  )
+  
+
+ggplot(df_counts_12, aes(x = blocked_rank, y = n, fill = precision)) +
+  geom_col() + 
+  theme_minimal() +
+  labs(
+    x = "Rango Bloqueado",
+    y = "Número de resultados",
+    fill = "Precisión alcanzada"
+  ) +
+  scale_x_discrete(drop = TRUE) +
+  scale_fill_brewer(palette = "Spectral", drop = TRUE)
+ggsave(here("06_Graphs/apilado_12.pdf"))
+```
+Vamos a tratar de graficar esto de una mejor manera posible:
+
+```{r}
+join_123 <- join_123 |>
+  mutate(precision=case_when(
+    precision == "Worse"   ~ "Unassigned",
+    precision=="kingdom" ~ "Worse",
+    .default=precision))
+df_counts_123 <- join_123 |> 
+  mutate(across(c(pident, evalue), as.numeric)) |> 
+  filter(!(blocked_rank=="genus" & precision=="species")) |> 
+  count(blocked_rank, precision) |> 
+  mutate(
+    precision = factor(precision, levels = rev(c("genus", "family", "order", "class", "phylum", "Worse", "Unassigned"))),
+    blocked_rank = factor(blocked_rank, levels = c("species", "genus", "family", "order", "class"))
+  )
+
+ggplot(df_counts_123, aes(x = blocked_rank, y = precision, size = n, fill = precision)) +
+  geom_point(shape = 21, color = "grey40", alpha = 0.8) + 
+  scale_size_continuous(range = c(1, 16)) + 
+  scale_fill_brewer(palette = "Spectral", guide = "none") +
+  theme_minimal() +
+  labs(
+    x = "Rango Bloqueado",
+    y = "Precisión alcanzada",
+    size = "Número de hits"
+  ) +
+  theme(
+    panel.grid.major = element_line(color = "grey90"),
+    panel.grid.minor = element_blank()
+  )
+ggsave(here("Gráficas/burbujitas_123.pdf"))
+```
+
+```{r}
+join_12 <- join_12 |>
+  mutate(precision=case_when(
+    precision == "Worse"   ~ "Unassigned",
+    precision=="kingdom" ~ "Worse",
+    .default=precision))
+df_counts_12 <- join_12 |> 
+  mutate(across(c(pident, evalue), as.numeric)) |> 
+  filter(!(blocked_rank=="genus" & precision=="species")) |> 
+  count(blocked_rank, precision) |> 
+  mutate(
+    precision = factor(precision, levels = rev(c("genus", "family", "order", "class", "phylum", "Worse", "Unassigned"))),
+    blocked_rank = factor(blocked_rank, levels = c("species", "genus", "family", "order", "class"))
+  )
+
+ggplot(df_counts_12, aes(x = blocked_rank, y = precision, size = n, fill = precision)) +
+  geom_point(shape = 21, color = "grey40", alpha = 0.8) + 
+  scale_size_continuous(range = c(3, 20)) + 
+  scale_fill_brewer(palette = "Spectral", guide = "none") +
+  theme_minimal() +
+  labs(
+    x = "Rango Bloqueado",
+    y = "Precisión alcanzada",
+    size = "Número de hits"
+  ) +
+  theme(
+    panel.grid.major = element_line(color = "grey90"),
+    panel.grid.minor = element_blank()
+  )
+ggsave(here("Gráficas/burbujitas_12.pdf"))
+```
+
+
+
+Necesitamos primero contar cuántas especies tenemos y mantener solamente las secuencias que pertenezcan a especies con 3 representantes o más.
+```{r}
+seqs <- seqinr::read.fasta(here("data/data_123/combined_123.fasta"),
+                            seqtype      = "DNA",
+                            as.string    = TRUE,
+                            whole.header = TRUE)
+
+# Se extran los nombres específicos
+headers <- names(seqs)
+species <- sub("^[^ ]+ ", "", headers)
+lengths <- nchar(unlist(seqs))
+
+# Se filtran secuencias x tamaño (otra vez)
+keep_len <- lengths >= 250 & lengths <= 400
+seqs_len <- seqs[keep_len]
+sp_len   <- species[keep_len]
+hd_len   <- headers[keep_len]
+cat("Después de filtrar por longitud quedan:", length(seqs_len), "secuencias")
+
+# No podemos hacer el alineamiento cuando solo hay 1 seq por especie
+counts   <- table(sp_len)
+sp_keep  <- names(counts[counts >= 3])
+keep_sp  <- sp_len %in% sp_keep
+seq_final <- seqs_len[keep_sp]
+sp_final  <- sp_len[keep_sp]
+hd_final  <- hd_len[keep_sp]
+
+cat("Filtrado >=3 secuencias por especie. Quedan:", length(seq_final), "secuencias")
+cat("Especies únicas:           ", length(unique(sp_final)), "\n")
+
+# Nuevo FASTA para el alineamiento
+seqinr::write.fasta(sequences = seq_final,
+                    names     = hd_final,
+                    file.out  = here("Query_calanoida/calanoida_leray_filtered_123.fasta"))
+
+```
+
+Para las distancias entre congéneres habría que ver si dentro de este "dataset" hay géneros con al menos 2 especies:
+
+El alineamiento se hace con MAFFT:
+
+```{bash}
+#!/bin/bash
+INPUT_FASTA=$1
+OUTPUT_FASTA=$2
+mafft --retree 2 --maxiterate 100 "$INPUT_FASTA"> "$OUTPUT_FASTA"
+```
+
+Ahora que tenemos los resultados podemos analizarlos con el paquete de R spider.
+Primero se requiere de un vector con el nombre de las especies.
+
+```{r vector con el nombre de las especies}
+#Primero leemos el archivo FASTA de manera a definirlo como un DNAbin usando ape:
+
+calanoida_aligned_123 <- read.FASTA(here("Query_calanoida/calanoida_aligned_123.fasta"))
+calanoida_aligned_12 <- read.FASTA(here("Query_calanoida/calanoida_aligned_12.fasta"))
+
+spp_full <- sub("^\\S+\\s+", "", names(calanoida_aligned_123))
+spp_2pos <- sub("^\\S+\\s+", "", names(calanoida_aligned_12))
+
+```
+
+Ahora que tenemos el vector podemos calcular las distancias intra e interespecíficas:
+
+```{r calcular distancias}
+#Primero necesitamos una matriz de distancias que se puede hacer con la función dist.dna de ape.
+dist_full <- dist.dna(calanoida_aligned_123, model = "K81", pairwise.deletion = TRUE)
+dist_2pos <- dist.dna(calanoida_aligned_12, model = "K81", pairwise.deletion = TRUE)
+
+#Ahora que tenemos las distancias podemos aplicar la función sppDist que requiere de una matriz de distancias y de un vector de especies:
+#Lo que calculamos es distancia intraespecífica (quitamos la distancia inter ya que representa la distancia de todo contra todo) y distancia con el "Nearest neighbour".
+
+intra_full <- sppDist(dist_full, spp_full)$intra
+intra_2pos <- sppDist(dist_2pos, spp_2pos)$intra
+
+# Convertir a matriz
+dist_mat_full <- as.matrix(dist_full)
+dist_mat_2pos <- as.matrix(dist_2pos)
+
+#Calculamos para obtener la distancia mínima interespecífica -> Meier et al., 2008. 
+min_interspecific <- function(dist_mat, spp) {
+  n <- nrow(dist_mat)
+  min_inter <- numeric(n)
+  names(min_inter) <- rownames(dist_mat)
+  for (i in seq_len(n)) {
+    # Calculamos distancias únicamente entre especies diferentes (no tienen porqué ser del mismo género, mantenemos la mínima para no sobreestimar dist interespecífica)
+    diff_spp <- dist_mat[i, spp != spp[i]]
+    min_inter[i] <- if (length(diff_spp) > 0) min(diff_spp, na.rm = TRUE) else NA
+  }
+  return(min_inter)
+}
+
+nn_full <- min_interspecific(dist_mat_full, spp_full)
+nn_2pos <- min_interspecific(dist_mat_2pos, spp_2pos)
+
+```
+
+```{r combinar los datos }
+# Construir dataframe combinado para ambas bases de datos
+df_dist <- data.frame(
+  distance = c(
+    intra_full, nn_full,
+    intra_2pos, nn_2pos
+  ),
+  type = c(
+    rep("intraspecific",       length(intra_full)),
+    rep("nearest_neighbour",    length(nn_full)),
+    rep("intraspecific",       length(intra_2pos)),
+    rep("nearest_neighbour",    length(nn_2pos))
+  ),
+  database = c(
+    rep("123",    length(intra_full) + length(nn_full)),
+    rep("12",    length(intra_2pos) + length(nn_2pos))
+  )
+)
+
+df_dist$database <- factor(df_dist$database, levels = c("123", "12"))
+df_dist$type     <- factor(df_dist$type,     levels = c("intraspecific", "nearest_neighbour"))
+
+#Y ahora graficamos:
+ggplot(df_dist, aes(x = distance, fill = type, color = type)) +
+  geom_density(alpha = 0.5) +
+  xlim(0,0.6) +
+  facet_wrap(~ database, ncol = 1) +
+  scale_fill_manual(values = c(
+    "intraspecific"    = "#e74c3c",
+    "nearest_neighbour" = "#f1c40f"
+  )) +
+  scale_color_manual(values = c(
+    "intraspecific"    = "#c0392b",
+    "nearest_neighbour" = "#d4ac0d"
+  )) +
+  labs(
+    x     = "Distancia genética (K2P)",
+    y     = "Densidad",
+    fill  = NULL,
+    color = NULL
+  ) +
+  theme_classic(base_size = 12) +
+  theme(
+    legend.position = "top",
+    strip.text      = element_text(face = "bold")
+  )
+
+#ggsave(here("Gráficas/capacidad_discriminatoria.pdf"), width = 7, height = 8)
+
+```
+
+Y ahora por último nos gustaría ver una comparación del bitscore:
+
+```{r comparar bitscores}
+#Primero hay que unir los dos dfs por lo que hay que crear identificadores únicos:
+join_123 <- join_123 |> 
+mutate(unique_id = paste0(qseqid, "_", accession, "_block_", blocked_rank), .before = 2)
+
+
+join_12 <- join_12 |> 
+mutate(unique_id = paste0(qseqid, "_", accession, "_block_", blocked_rank), .before= 2)
+
+join_123 <- join_123 |> distinct(unique_id, .keep_all = TRUE)
+join_12 <- join_12 |> distinct(unique_id, .keep_all = TRUE)
+
+
+
+df_combined <- left_join(join_123, join_12, by = "unique_id", suffix = c("_full", "_pos12"))
+df_combined$blocked_rank_full<- factor(df_combined$blocked_rank_full, levels =c("species", "genus", "family", "order", "class"))
+
+ggplot(df_combined, aes(x = bitscore_full, y = bitscore_pos12, color = blocked_rank_full)) +
+  geom_point(alpha = 0.3, size= 0.2) +
+  geom_abline(slope = 1, intercept=0, linetype = "dashed", color = "red") +
+  facet_wrap(~blocked_rank_full) + 
+  theme_bw() +
+  guides(color = "none")
+ggsave(here("Gráficas/bitscore.pdf"))
+```
+
