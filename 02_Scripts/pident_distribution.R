@@ -5,17 +5,15 @@
 library(tidyverse)
 library(insect)
 library(here)
-library(lme4)
-
-# Ejemplo: Rscript pident_distribution.R path/to/output_123_XX001_blocked_456.txt 197 -> así no hace falta ajustar este parámetro cada vez que cambiamos de db.
 params           <- commandArgs(TRUE)
 blast_output     <- params[1]
-min_qlen         <- as.numeric(params[2])   # 197 para base 12, 297 para base 123
+min_qlen         <- params[2] # 197 para base 12, 297 para base 123 -> se especifica en llamamiento script
 
-# Filtros
+# Filtros 
 min_length_prop  <- 0.85
 pident_abs_limit <- 80
 max_evalue       <- 1e-6
+
 
 file_id <- tools::file_path_sans_ext(basename(blast_output))
 message("Procesando: ", blast_output)
@@ -36,14 +34,14 @@ taxonomy_db   <- read_csv(here("taxonomy_now.csv"), show_col_types = FALSE)
 taxonomy_cols <- c("kingdom", "phylum", "class", "order", "family", "genus", "species")
 assigned_cols <- paste0("assigned_", taxonomy_cols)
 
-# Rango taxonómico del taxID bloqueado
+# Determinar rango taxonómico del taxID bloqueado
 blocked_info <- taxonomy_db |>
   filter(taxID == b_taxid) |>
   select(blocked_rank = rank)
 
 if (nrow(blocked_info) == 0) {
   blocked_info <- tibble(blocked_rank = "no_block")
-}
+} #los que no tienen ningún rango bloqueado se llaman -> ..._blocked_0000.tsv.
 
 #Linaje de los staxIDs (obtenidos con taxonkit)
 all_lineages <- read_lines(here("03_blast_results/12_good/lineages_12.txt")) |>
@@ -66,7 +64,7 @@ blast_raw <- read_delim(
 ) |>
   separate_rows(staxids, sep = ";") |>      
   mutate(
-    qseqid = as.character(q_taxid),
+    qseqid = as.character(q_taxid), 
     across(c(qlen, slen, pident, length, evalue, bitscore, staxids), as.numeric)
   ) |>
   add_column(blocked_rank = blocked_info$blocked_rank, .before = 3) |> 
@@ -124,7 +122,7 @@ message("Analizando resultados del taxID: ", q_taxid,
 
 if (nrow(quality_filtered) == 0) {
   pident_filter <- tibble(
-    qseqid       = as.character(q_taxid),
+    qseqid      = as.character(q_taxid),
     blocked_rank = blocked_info$blocked_rank,
     staxids      = NA_real_,
     pident       = NA_real_,
@@ -143,7 +141,7 @@ pident_combined <- pident_filter |>
     by = c("qseqid" = "q_taxid")
   ) |>
   mutate(across(everything(), as.character)) |> 
-  mutate(unique_id = paste0(qseqid, "_", accession, "_block_", blocked_rank), .before = 2)
+  mutate(unique_id = paste0(q_taxid, "_", accession, "_block_", blocked_rank), .before = 2)
 #Ahora calculamos precisión taxonómica
 pident_combined$precision <- pmap_chr(
   pident_combined,
@@ -172,8 +170,6 @@ pident_combined <- pident_combined |>
   ) |> 
   add_column(database="12", .before = 2)
 
-#Ahora preparamos los pidents para la beta regresión mixta-> no puede haber valores iguales a 0 y 100.
-
 write_csv(
   pident_combined,
   here("03_blast_results/12_good/pident_calculations", paste0("pident_", file_id, ".csv"))
@@ -191,16 +187,18 @@ all_pident <- pident_files |>
 
 sample_size <- nrow(all_pident)
 
-#Una vez que los tenemos todos juntos ajustamos el valor del pident para poder hacer la regresión beta mixta.
+#Una vez que los tenemos todas las obs. juntas pasamos pident -> prop para poder hacer la regresión beta mixta -> ordbeta para que entre interval cerrado [0;1]
+#Ya que tenemos valores de pident=100%-> ordbeta (Kubinec, 2022)
 pident_mod <- all_pident |>
   mutate(
-    y_norm=((pident*(sample_size-1) + 0.5) / sample_size),
+    pident = as.numeric(pident),
+    #Leer documentación glmmTMB para ordbeta (dentro de betafamily) -> transformar intervalo [a, b] a [0,1] -> (y-a/b-a), siendo nuestro intervalo [80;100]
+    y_norm = ((pident-80)/(100-80)),
     precision_group=fct_relevel(precision_group, "species", "genus", "family", "order", "class", "phylum", "Worse"),
-    status= precision == next1
-  )
+    status= if_else(precision == next1, "Correcto", "Incorrecto"))
 saveRDS(pident_mod, file = here("03_blast_results/12_good/pident_calculations/all_pident_together.rds"))
 
 
-## out_folder=/home/cbaeyens/03_blast_results/blast_parsed_123_v2
+## out_folder=/home/cbaeyens/03_blast_results/pident_123_parsed
 ## blast_folder=/home/cbaeyens/03_blast_results/123_good
 ## sbatch --array=1-909 --export=BLAST_FOLDER="$blast_folder" /home/cbaeyens/01_Scripts/Step2_taxonomy_array.sh 
