@@ -1,15 +1,23 @@
 ---
 title: "Reformateo_midori"
-output: html_document
+output: word_document
 date: "`r Sys.Date()`"
 ---
 
 Tras descargar la base de datos de COI desde MIDORI en formato BLAST, hay que reformatear la base de datos. Primero lo pasamos a formato oneline.
 
+```{r cargar entorno, include=FALSE}
+knitr::opts_chunk$set(eval = FALSE)
+library(tidyverse)
+library(eDNAfuns)
+library(here)
+```
+
+
 ```{bash}
 #Usage: bash Scripts/oneline_fasta.sh input.file output.file
 # First acitvate the conda environment for seqkit in the terminal
-seqkit seq -w0 raw_data_CO1_uniq_midori/Sequences_for_blast/MIDORI2_UNIQ_NUC_GB268_CO1_BLAST.fasta > raw_data_CO1_uniq_midori/midori_blast_format/midori_oneline.fasta
+seqkit seq -w0 01_Raw_data/MIDORI2_UNIQ_NUC_GB268_CO1_BLAST.fasta > 01_Raw_data//MIDORI2_UNIQ_NUC_GB268_CO1_ONELINE.fasta
 ```
 
 Posteriormente se limpia el header.Se recomienda una información mínima en los headers. Se mantiene el accession number y el taxid, separados por ";".
@@ -73,9 +81,6 @@ cutadapt \
 Primero creamos un tibble con 4 columnas: el header completo, el accession, el taxid y la secuencia. 
 
 ```{r}
-library(tidyverse)
-library(eDNAfuns)
-library(here)
 midori_fasta <- fasta_reader(here("04_Databases/trimmed_reverse.fasta"))
 midori_intermediate <- midori_fasta |>
   separate(
