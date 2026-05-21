@@ -1,0 +1,71 @@
+---
+title: "pident_model"
+output: html_document
+date: "2026-05-19"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(here)
+library(tidyverse)
+library(glmmTMB)
+library(emmeans)
+library(broom)
+library(broom.mixed)
+```
+
+## Este RMarkdown es para determinar la distribución de los pidents según diferentes factores para ver cuánto afecta la base de datos en el valor del pident 
+
+```{r cargar datos y combinarlos}
+
+pident_12 <- readRDS(here("05_blast_results/all_pident_together_12.rds"))
+pident_123 <- readRDS(here("05_blast_results/all_pident_together_123.rds"))
+all_pident_combined <- rbind(pident_12, pident_123)
+saveRDS(all_pident_combined, here("05_blast_results/all_pident_combined.rds"))
+#Correr esto en caso de que no se hayan guardado los df en el env:
+all_pident_combined <- readRDS(here("05_blast_results/all_pident_combined.rds")) #Total de 8844652 observaciones 
+```
+
+
+```{r definir modelo}
+
+#La función glmmTMB requiere de un tibble como objeto "data" -> no acepta un df:
+#all_pident_combined_tibble <- as_tibble(all_pident_combined)
+mod_pident <- glmmTMB(y_norm ~ database * status * blocked_rank + (1|accession), family=ordbeta, data=all_pident_combined)
+
+mod_pident <- readRDS(here("07_model/mod_pident.rds"))
+coef_pident <- read_csv(here("07_model/pident_coef.csv"))
+#Aparentemente valores de Z demasiado elevados (imagino que por el tamaño muestral ~ 8M)
+diagnose(mod_pident)
+```
+
+```{r coeficientes del modelo}
+#Así podemos ver cómo afecta cada factor en el pident del resultado de BLAST.
+tidy(mod_pident) |> 
+  filter(effect=="fixed") |> 
+  arrange(p.value)
+```
+
+```{r verificar si modelo es correcto}
+residuos <- simulateResiduals(mod_pident)
+    plot(residuos)
+```
+
+
+```{r retransformar los datos y comparar pidents según cada escenario}
+
+#Medias estimadas para combinación
+medias_status <- emmeans(mod_pident, ~ status * blocked_rank) #Mejor retro-transformamos luego los datos 
+plot(medias_status_rank) 
+
+#Comparar medias incorrecto vs correcto por cada rango bloqueado
+pairs(medias_status_rank, by = "blocked_rank")
+
+#Ahora para ver el efecto de las db en el pident según laguna y status.
+medias_triples <- emmeans(mod_pident, ~ database * status * blocked_rank, type = "response")
+
+pairs(medias_triples, by = c("status", "blocked_rank"))
+```
+
+
+

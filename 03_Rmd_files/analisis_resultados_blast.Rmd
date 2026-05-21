@@ -12,6 +12,8 @@ library(insect)
 library(taxonomizr)
 library(spider)
 library(ape)
+library(readxl)
+library(flextable)
 ```
 
 # Usage: Rscript parse_blast.r <blast_output>
@@ -42,10 +44,9 @@ join_123 <- read_csv(here("05_blast_results/join_good_123.csv"))
 join_123 <- join_123 |> 
   mutate(across(c(qlen, slen, length, evalue, pident, bitscore), as.numeric))
 
-join_12 <- read_csv(here("05_blast_results/join_good_123.csv"))
+join_12 <- read_csv(here("05_blast_results/join_good_12.csv"))
 join_12 <- join_12 |> 
   mutate(across(c(qlen, slen, length, evalue, pident, bitscore), as.numeric)) 
-
 
 ```
 
@@ -353,11 +354,19 @@ ggplot(df_counts_12, aes(x = blocked_rank, y = precision, size = n, fill = preci
 ggsave(here("Gráficas/burbujitas_12.pdf"))
 ```
 
+```{r generar tabla anexos}
+df_counts_combined <- read_excel(here("05_blast_results/n_counts_taxassignment.xlsx"))
+df_counts_ft <- flextable(df_counts_combined,
+          col_keys = c("Rango bloqueado", "Rango de precisión", "N(123)", "N(12)"))
+df_counts_ft <- theme_vanilla(df_counts_ft)
+save_as_docx(df_counts_ft, path= here("05_blast_results/count_flextable.docx"))
+```
+
 
 
 Necesitamos primero contar cuántas especies tenemos y mantener solamente las secuencias que pertenezcan a especies con 3 representantes o más.
 ```{r}
-seqs <- seqinr::read.fasta(here("data/data_123/combined_123.fasta"),
+seqs <- seqinr::read.fasta(here("02_Raw_data/Query_data/data_123/combined_123.fasta"),
                             seqtype      = "DNA",
                             as.string    = TRUE,
                             whole.header = TRUE)
@@ -388,7 +397,7 @@ cat("Especies únicas:           ", length(unique(sp_final)), "\n")
 # Nuevo FASTA para el alineamiento
 seqinr::write.fasta(sequences = seq_final,
                     names     = hd_final,
-                    file.out  = here("Query_calanoida/calanoida_leray_filtered_123.fasta"))
+                    file.out  = here("99_Query_calanoida/calanoida_leray_filtered_123.fasta"))
 
 ```
 
@@ -409,8 +418,8 @@ Primero se requiere de un vector con el nombre de las especies.
 ```{r vector con el nombre de las especies}
 #Primero leemos el archivo FASTA de manera a definirlo como un DNAbin usando ape:
 
-calanoida_aligned_123 <- read.FASTA(here("Query_calanoida/calanoida_aligned_123.fasta"))
-calanoida_aligned_12 <- read.FASTA(here("Query_calanoida/calanoida_aligned_12.fasta"))
+calanoida_aligned_123 <- read.FASTA(here("99_Query_calanoida/calanoida_aligned_123.fasta"))
+calanoida_aligned_12 <- read.FASTA(here("99_Query_calanoida/calanoida_aligned_12.fasta"))
 
 spp_full <- sub("^\\S+\\s+", "", names(calanoida_aligned_123))
 spp_2pos <- sub("^\\S+\\s+", "", names(calanoida_aligned_12))
@@ -422,7 +431,7 @@ Ahora que tenemos el vector podemos calcular las distancias intra e interespecí
 ```{r calcular distancias}
 #Primero necesitamos una matriz de distancias que se puede hacer con la función dist.dna de ape.
 dist_full <- dist.dna(calanoida_aligned_123, model = "K81", pairwise.deletion = TRUE)
-dist_2pos <- dist.dna(calanoida_aligned_12, model = "K81", pairwise.deletion = TRUE)
+dist_2pos <- dist.dna(calanoida_aligned_12, model = "K81", gamma=0.3507, pairwise.deletion = TRUE)
 
 #Ahora que tenemos las distancias podemos aplicar la función sppDist que requiere de una matriz de distancias y de un vector de especies:
 #Lo que calculamos es distancia intraespecífica (quitamos la distancia inter ya que representa la distancia de todo contra todo) y distancia con el "Nearest neighbour".
@@ -488,7 +497,7 @@ ggplot(df_dist, aes(x = distance, fill = type, color = type)) +
     "nearest_neighbour" = "#d4ac0d"
   )) +
   labs(
-    x     = "Distancia genética (K2P)",
+    x     = "Distancia genética",
     y     = "Densidad",
     fill  = NULL,
     color = NULL
@@ -520,14 +529,16 @@ join_12 <- join_12 |> distinct(unique_id, .keep_all = TRUE)
 
 
 df_combined <- left_join(join_123, join_12, by = "unique_id", suffix = c("_full", "_pos12"))
-df_combined$blocked_rank_full<- factor(df_combined$blocked_rank_full, levels =c("species", "genus", "family", "order", "class"))
+df_combined$blocked_rank_full<- factor(df_combined$blocked_rank_full, levels =c("no_block", "species", "genus", "family", "order", "class")) 
 
 ggplot(df_combined, aes(x = bitscore_full, y = bitscore_pos12, color = blocked_rank_full)) +
   geom_point(alpha = 0.3, size= 0.2) +
+  xlim(185, 2000) +
+  ylim(185, 2000)+
   geom_abline(slope = 1, intercept=0, linetype = "dashed", color = "red") +
   facet_wrap(~blocked_rank_full) + 
   theme_bw() +
   guides(color = "none")
-ggsave(here("Gráficas/bitscore.pdf"))
+#ggsave(here("Gráficas/bitscore.pdf"))
 ```
 

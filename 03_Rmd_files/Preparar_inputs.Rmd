@@ -1,6 +1,6 @@
 ---
 title: "Preparar_inputs"
-output: html_document
+output: word_document
 date: "2026-01-14"
 ---
 Se preparan los queries de manera a hacer un BLAST con bloqueo taxonómico. 
@@ -9,14 +9,13 @@ El primer paso es obtener todos los archivos necesarios para hacer el bloqueo ta
 1) Archivos FASTA para cada taxID (especie) del orden Calanoida (almacenados en la carpeta data)
 Usando el script get_species_taxids.sh se obtiene una lista de los taxids dentro del orden de Calanoida
 Primero hay que instalar Entrez EDirect esearch tool en la terminal.
-2) Un archivo con taxonomía "verdadera" (taxonomy_good.csv almacenado en la carpeta (raw_data_CO1_uniq_midori/Secuencias_COI_midori))
+2) Un archivo con taxonomía "verdadera" (taxonomy_good.csv almacenado en la carpeta (01_Raw_data) )
 
 1a) Configuramos el entorno para la generación de los archivos:
 
-```{r setup, include=FALSE}
+```{r configuración entorno, include=TRUE}
 knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
-#library(eDNAfuns)
 library(dplyr)
 library(here)
 library(insect)
@@ -26,30 +25,25 @@ library(future)
 
 Puede ser relevante obtener los taxids de todas las especies pertenecientes al orden Calanoida:
 
-2a) Obtener archivo con los taxids de las especies del orden Calanoida
 
+2a) Se extraen las secuencias pertenecientes al orden Calanoida, ya que estas conformarán las "queries". Se guardará un archivo fasta 123 y un archivo fasta 12 -> aquí sí que podemos extraer solo una secuencia por taxID 
 ```{bash}
-get_species_taxids -t 6833 > calanoida_taxids.txt
-```
-
-3a) Se extraen las secuencias pertenecientes al orden Calanoida, ya que estas conformarán las "queries". Se guardará un archivo fasta 123 y un archivo fasta 12 -> aquí sí que podemos extraer solo una secuencia por taxID 
-```{bash}
-#Usage: First activate de environment for blast. A escribir en la terminal: bash Scripts/extract_calanoida.sh path to input.fasta output.csv. 
-#Make sure to download the NCBI taxonomy file first. Pon dichos archivos en la carpeta "raíz", no en la de la db (o cambiar de directorio antes de ejecutar el script). 
+#Usage: Conda activate blast_env. A escribir en la terminal: bash Scripts/extract_calanoida.sh <path to input.fasta> <output.csv> 
+#IMPRESCINDIBLE: Descargar bd taxonomía NCBI. Pon dichos archivos en la carpeta "raíz", no en la de la db (o cambiar de directorio antes de ejecutar el script). 
 INPUT_FILE="$1"
 OUTPUT_FILE="$2"
 blastdbcmd -db "$INPUT_FILE" \
            -taxids 6833 \
            -outfmt %T,%s,%a,%S \
            -out "$OUTPUT_FILE" \
-
+#Esto generará los archivos all_together_calanoida_12.csv y all_together_calanoida_123.csv
 ```
 
 4a) Cargar estos datos en R. Definimos como data frame tanto Calanoida_123 como Calanoida_12.
 
 ```{r}
-Calanoida_123 <- read_csv(here("Query_Calanoida/all_together_calanoida_123.csv"), col_names=c("taxid", "seq", "accession", "scientific_name"), show_col_types=FALSE)
-spec(Calanoida_123)
+Calanoida_123 <- read_csv(here("01_Raw_data/Query_data/all_together_calanoida_123.csv"), col_names=c("taxid", "seq", "accession", "scientific_name"), show_col_types=FALSE)
+spec(Calanoida_123) 
 cols(
 taxid=col_double(),
 seq=col_character(),
@@ -57,7 +51,7 @@ accession=col_character(),
 scientific_name=col_character()
 )
 
-Calanoida_12 <- read_csv(here("Query_Calanoida/all_together_calanoida_12.csv"), col_names=c("taxid", "seq", "accession", "scientific_name"), show_col_types=FALSE)
+Calanoida_12 <- read_csv(here("01_Raw_data/Query_data/all_together_calanoida_12.csv"), col_names=c("taxid", "seq", "accession", "scientific_name"), show_col_types=FALSE)
 spec(Calanoida_12)
 cols(
 taxid=col_double(),
@@ -79,7 +73,7 @@ min_len_12  <- floor(0.95 * 209)  # 198 bp
 Calanoida_123 |>
   filter(nchar(seq) >= min_len_123) |>
   pwalk(function(taxid, seq, accession, scientific_name, ...) {
-    filename <- here("data/data_123", paste0("123_taxid_", taxid, "_", accession, ".fasta"))
+    filename <- here("01_Raw_data/Query_data/data_123", paste0("123_taxid_", taxid, "_", accession, ".fasta"))
     lines <- paste0(">", accession, ";", scientific_name, "\n", seq)
     writeLines(lines, filename)
   })
@@ -88,7 +82,7 @@ Calanoida_123 |>
 Calanoida_12 |>
   filter(nchar(seq) >= min_len_12) |>
   pwalk(function(taxid, seq, accession, scientific_name, ...) {
-    filename <- here("data/data_12", paste0("12_taxid_", taxid, "_", accession, ".fasta"))
+    filename <- here("01_Raw_data/Query_data/data_12", paste0("12_taxid_", taxid, "_", accession, ".fasta"))
     lines <- paste0(">", accession, ";", scientific_name, "\n", seq)
     writeLines(lines, filename)
   })
@@ -102,14 +96,14 @@ Calanoida_123 |> count(taxid, sort = TRUE)
 Calanoida_12  |> count(taxid, sort = TRUE)
 ```
 
-6a) Generar un archivo con la taxonomía "verdadera" de cada secuencia para luego hacer el BLAST con bloqueo taxonómico. 
+6a) Cargar el archivo con la taxonomía "verdadera" de cada secuencia para luego hacer el BLAST con bloqueo taxonómico. 
 
 ```{r}
 library(insect)
 library(tidyverse)
 library(dplyr)
 taxonomy_now <- taxonomy(db = "NCBI", synonyms = FALSE)
-write.csv(taxonomy_now, here("raw_data_CO1_uniq_midori/Secuencias_COI_midori/taxonomy_now.csv"), row.names=TRUE)
+write.csv(taxonomy_now, here("01_Raw_data/taxonomy_now.csv"), row.names=TRUE)
 ```
 
 Ahora que tenemos todos los archivos ya podemos preparar los "inputs" para el BLAST.
@@ -118,7 +112,7 @@ Ahora que tenemos todos los archivos ya podemos preparar los "inputs" para el BL
 1b) Cargar la taxonomía
  
 ```{r}
-taxonomy_now <- read_csv(here("raw_data_CO1_uniq_midori/Secuencias_COI_midori/taxonomy_now.csv"), show_col_types=FALSE)
+taxonomy_now <- read_csv(here("01_Raw_data/taxonomy_now.csv"), show_col_types=FALSE)
 spec(taxonomy_now)
 cols(
 rank=col_character(),
@@ -133,12 +127,12 @@ blocked_ranks <- tibble(rank=c("class", "order", "family", "genus", "species"))
 2b) Localizar los archivos FASTA/ taxid
 
 ```{r}
-tibble(files = list.files(path = here("data/data_123"), pattern = "*.fasta")) |>
+tibble(files = list.files(path = here("01_Raw_data/Query_data/data_123"), pattern = "*.fasta")) |>
   mutate(
     taxID_query = as.numeric(str_extract(files, "(?<=taxid_)\\d+"))
   ) -> inputs_123
 
-tibble(files = list.files(path = here("data/data_12"), pattern = "*.fasta")) |>
+tibble(files = list.files(path = here("01_Raw_data/Query_data/data_12"), pattern = "*.fasta")) |>
   mutate(
     taxID_query = as.numeric(str_extract(files, "(?<=taxid_)\\d+"))
   ) -> inputs_12
@@ -147,7 +141,7 @@ tibble(files = list.files(path = here("data/data_12"), pattern = "*.fasta")) |>
 3b) Generar una lista de experimentos (secuencias que se bloquearán dentro de la base de datos de referencia)
 
 ```{r}
-# Compute lineage only ONCE per unique taxID, then join back
+# se calcula el linaje solo 1 vez por cada taxID y luego se une (no repetir cálculos)
 unique_lineages_123 <- inputs_123 |>
   distinct(taxID_query) |>
   mutate(
@@ -158,13 +152,14 @@ unique_lineages_123 <- inputs_123 |>
     )
   )
 
-# Now join back to the full input list (all sequences)
+# Ahora se unen los linajes enteros al df final
 experiment_list_123 <- inputs_123 |>
-  left_join(unique_lineages_12, by = "taxID_query") |>
+  left_join(unique_lineages_123, by = "taxID_query") |>
   unnest(blocked)
 
-write.csv(experiment_list_123, here("Query_calanoida/experiment_list_123.csv"), row.names = TRUE)
+write.csv(experiment_list_123, here("99_Query_calanoida/experiment_list_123.csv"), row.names = TRUE)
 
+#Repetimos para bd 12:
 
 unique_lineages_12 <- inputs_12 |>
   distinct(taxID_query) |>
@@ -176,12 +171,12 @@ unique_lineages_12 <- inputs_12 |>
     )
   )
 
-# Now join back to the full input list (all sequences)
+
 experiment_list_12 <- inputs_12 |>
   left_join(unique_lineages_12, by = "taxID_query") |>
   unnest(blocked)
 
-write.csv(experiment_list_12, here("Query_calanoida/experiment_list_12.csv"), row.names = TRUE)
+write.csv(experiment_list_12, here("99_Query_calanoida/experiment_list_12.csv"), row.names = TRUE)
 ```
 
 
