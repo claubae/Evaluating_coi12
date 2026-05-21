@@ -2,6 +2,9 @@
 01_Raw_data
 04_Databases
 06_Graphs
+05_blast_results/count_flextable.docx
+05_blast_results/n_counts_taxassignment.xlsx
+05_blast_results/all_pident_*
 99_Query_calanoida
 
 #User-specific files
@@ -13,6 +16,8 @@
 
 #Session data files
 .RData
+.RDataTmp
+03_Rmd_Files/.RDataTmp1
 
 #Mac generated files
 .DS_Store
