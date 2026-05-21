@@ -26,46 +26,63 @@ saveRDS(all_pident_combined, here("05_blast_results/all_pident_combined.rds"))
 all_pident_combined <- readRDS(here("05_blast_results/all_pident_combined.rds")) #Total de 8844652 observaciones 
 ```
 
+```{r}
+#Definimos el df
+all_pident_combined <- readRDS(here("pident_model/all_pident_combined.rds"))
+#Establecer la referencia para facilitar la interpretación -> establecemos como referencia blocked_rank= no_block y db=123.
+all_pident_combined <- all_pident_combined |>
+  mutate(
+    blocked_rank = fct_relevel(blocked_rank, "no_block", "species", "genus", 
+                               "family", "order", "class"),
+    database= fct_relevel(database, "123", "12")
+  )
+#Construcción modelo:
+mod_pident <- glmmTMB(y_norm ~ database * status * blocked_rank + (1|accession), family=ordbeta, data=all_pident_combined)
+#Guardar RDS para tener los datos en bruto:
+saveRDS(mod_pident, here("pident_model/mod_pident.rds"))
+```
+
+```{r calcular coef}
+#Ahora usamos broom para poder guardar los coef en un df:
+mod_pident <- readRDS(here("pident_model/mod_pident.rds"))
+pident_coef <- tidy(mod_pident) |> 
+  filter(effect=="fixed") |> 
+  arrange(p.value)
+write_csv(pident_coef, here("pident_model/pident_coef.csv"))
+```
+
+```{r medias}
+#Calcular medias para interpretar mejor lso datos
+medias_estimadas <- emmeans(mod_pident, ~ database * status * blocked_rank, type="response")
+pident_medias <- medias_estimadas |> 
+  as_tibble() |> 
+  mutate(
+    pident_retransf=(response * 20 + 80)
+  )
+write.csv(pident_medias, here("pident_model/medias_estimadas_pident.csv"))
+```
+
 
 ```{r definir modelo}
 
-#La función glmmTMB requiere de un tibble como objeto "data" -> no acepta un df:
-#all_pident_combined_tibble <- as_tibble(all_pident_combined)
-mod_pident <- glmmTMB(y_norm ~ database * status * blocked_rank + (1|accession), family=ordbeta, data=all_pident_combined)
-
+#Cargar datos y modelos
 mod_pident <- readRDS(here("07_model/mod_pident.rds"))
 coef_pident <- read_csv(here("07_model/pident_coef.csv"))
 #Aparentemente valores de Z demasiado elevados (imagino que por el tamaño muestral ~ 8M)
 diagnose(mod_pident)
+
+#Ahora cargamos las medias (hay que retrnansofrmar asymp también)
+medias_pident <- read_csv(here("07_model/medias_estimadas_pident.csv"))
+medias_pident <- medias_pident [, -1]|> 
+  mutate(
+    LCL_retransf=(asymp.LCL*20 + 80),
+    UCL_retransf=(asymp.UCL*20 + 80)
+  )
+#Guardamos el df con las transformaciones 
+write_csv(medias_pident, here("07_model/medias_estimadas_pident.csv"))
 ```
 
-```{r coeficientes del modelo}
-#Así podemos ver cómo afecta cada factor en el pident del resultado de BLAST.
-tidy(mod_pident) |> 
-  filter(effect=="fixed") |> 
-  arrange(p.value)
-```
 
-```{r verificar si modelo es correcto}
-residuos <- simulateResiduals(mod_pident)
-    plot(residuos)
-```
-
-
-```{r retransformar los datos y comparar pidents según cada escenario}
-
-#Medias estimadas para combinación
-medias_status <- emmeans(mod_pident, ~ status * blocked_rank) #Mejor retro-transformamos luego los datos 
-plot(medias_status_rank) 
-
-#Comparar medias incorrecto vs correcto por cada rango bloqueado
-pairs(medias_status_rank, by = "blocked_rank")
-
-#Ahora para ver el efecto de las db en el pident según laguna y status.
-medias_triples <- emmeans(mod_pident, ~ database * status * blocked_rank, type = "response")
-
-pairs(medias_triples, by = c("status", "blocked_rank"))
-```
 
 
 
