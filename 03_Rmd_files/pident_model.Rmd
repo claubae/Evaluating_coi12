@@ -97,7 +97,6 @@ medias_pident <- read_csv(here("07_model/medias_estimadas_pident.csv"))
 flextable(medias_pident) 
 save_as_docx(medias_pident)
 
-
 ```
 
 

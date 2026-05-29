@@ -1,12 +1,26 @@
 #Specific files
 01_Raw_data
+02_Scripts/pident_cluster.R
+
+03_Rmd_files/*docx
+03_Rmd_files/*html
+03_Rmd_files/gráficas.Rmd
+03_Rmd_files/analisis_resultados_blast.Rmd
+03_Rmd_files/pident_model_files/
+
 04_Databases
-06_Graphs
+
 05_blast_results/count_flextable.docx
 05_blast_results/n_counts_taxassignment.xlsx
 05_blast_results/all_pident_*
+
+06_Graphs
+
 07_model/mod_pident.rds
+07_model/*rds
 99_Query_calanoida
+
+
 
 #User-specific files
 .Rproj.user
@@ -18,6 +32,8 @@
 #Session data files
 .RData
 .RDataTmp
+.RDataTmp1
+.RDataTmp2
 03_Rmd_Files/.RDataTmp1
 
 #Mac generated files
