@@ -1,22 +1,23 @@
 ---
 title: "pident_model"
-output: html_document
+output: word_document
 date: "2026-05-19"
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(eval = TRUE, echo = FALSE, message = FALSE, warning = FALSE)
 library(here)
 library(tidyverse)
 library(glmmTMB)
 library(emmeans)
 library(broom)
 library(broom.mixed)
+library(flextable)
 ```
 
 ## Este RMarkdown es para determinar la distribución de los pidents según diferentes factores para ver cuánto afecta la base de datos en el valor del pident 
 
-```{r cargar datos y combinarlos}
+```{r cargar datos y combinarlos, eval=FALSE, echo=FALSE}
 
 pident_12 <- readRDS(here("05_blast_results/all_pident_together_12.rds"))
 pident_123 <- readRDS(here("05_blast_results/all_pident_together_123.rds"))
@@ -26,9 +27,9 @@ saveRDS(all_pident_combined, here("05_blast_results/all_pident_combined.rds"))
 all_pident_combined <- readRDS(here("05_blast_results/all_pident_combined.rds")) #Total de 8844652 observaciones 
 ```
 
-```{r}
+```{r generar modelo, eval=FALSE, echo=TRUE}
 #Definimos el df
-all_pident_combined <- readRDS(here("pident_model/all_pident_combined.rds"))
+all_pident_combined <- readRDS(here("07_model/all_pident_combined.rds"))
 #Establecer la referencia para facilitar la interpretación -> establecemos como referencia blocked_rank= no_block y db=123.
 all_pident_combined <- all_pident_combined |>
   mutate(
@@ -39,31 +40,39 @@ all_pident_combined <- all_pident_combined |>
 #Construcción modelo:
 mod_pident <- glmmTMB(y_norm ~ database * status * blocked_rank + (1|accession), family=ordbeta, data=all_pident_combined)
 #Guardar RDS para tener los datos en bruto:
-saveRDS(mod_pident, here("pident_model/mod_pident.rds"))
+saveRDS(mod_pident, here("07_model/mod_pident.rds"))
 ```
 
-```{r calcular coef}
+```{r calcular coef, eval=FALSE, echo=TRUE}
 #Ahora usamos broom para poder guardar los coef en un df:
-mod_pident <- readRDS(here("pident_model/mod_pident.rds"))
+mod_pident <- readRDS(here("07_model/mod_pident.rds"))
 pident_coef <- tidy(mod_pident) |> 
   filter(effect=="fixed") |> 
   arrange(p.value)
-write_csv(pident_coef, here("pident_model/pident_coef.csv"))
+write_csv(pident_coef, here("07_model/pident_coef.csv"))
 ```
 
-```{r medias}
+```{r, eval=FALSE, echo=TRUE}
+pident_coef <- read_csv(here("07_model/pident_coef.csv"))
+flextable(pident_coef)  
+save_as_docx(pident_coef)
+```
+
+
+
+```{r medias, eval=FALSE, echo=TRUE}
 #Calcular medias para interpretar mejor lso datos
 medias_estimadas <- emmeans(mod_pident, ~ database * status * blocked_rank, type="response")
-pident_medias <- medias_estimadas |> 
+medias_pident <- medias_estimadas |> 
   as_tibble() |> 
   mutate(
     pident_retransf=(response * 20 + 80)
   )
-write.csv(pident_medias, here("pident_model/medias_estimadas_pident.csv"))
+write.csv(medias_pident, here("pident_model/medias_estimadas_pident.csv"))
 ```
 
 
-```{r definir modelo}
+```{r medias y transformaciones, eval=FALSE, echo=FALSE}
 
 #Cargar datos y modelos
 mod_pident <- readRDS(here("07_model/mod_pident.rds"))
@@ -77,12 +86,53 @@ medias_pident <- medias_pident [, -1]|>
   mutate(
     LCL_retransf=(asymp.LCL*20 + 80),
     UCL_retransf=(asymp.UCL*20 + 80)
-  )
+  ) #las transformaciones del pident se hicieron antes solo me olvidé de hacer ala de las otras asíq ue las hago ahora.
 #Guardamos el df con las transformaciones 
 write_csv(medias_pident, here("07_model/medias_estimadas_pident.csv"))
 ```
 
+```{r, eval=FALSE, echo=TRUE}
+medias_pident <- read_csv(here("07_model/medias_estimadas_pident.csv"))
 
+flextable(medias_pident) 
+save_as_docx(medias_pident)
+
+
+```
+
+
+```{r graficar, eval=FALSE, echo=TRUE}
+plot_pident <- as.data.frame(medias_pident)
+plot_pident$blocked_rank <- factor (plot_pident$blocked_rank, levels=c("no_block", "species", "genus", "family", "order", "class"))
+plot_pident$database <- factor(plot_pident$database, levels=c("123", "12"))
+ggplot_pident <- ggplot(plot_pident, aes(x=blocked_rank, y=pident_retransf, color= status, group = status)) +
+  geom_line(size = 1, alpha = 1.5) +
+  geom_point(size = 1) +
+  scale_color_manual( 
+    values= c(
+      "Incorrecto" = "#DC3440",
+      "Correcto" = "#3E9AB4"
+    ), 
+    name= "status") +
+  geom_errorbar(aes(ymin = LCL_retransf, ymax = UCL_retransf), width = 0.2) +
+  facet_wrap(~database, ncol=2) +
+  labs(
+    y = "pident (%)",
+    x = "Rango bloqueado"
+  ) +
+  theme_bw()+
+  theme(
+    axis.text.x  = element_text(angle = 45, hjust = 1, size = 10),
+    axis.text.y  = element_text(size = 10),
+    axis.title   = element_text(size = 12),
+    strip.text   = element_text(size = 11, face = "bold"), 
+    legend.position = "bottom"  
+  )
+
+#saveRDS(plot_pident, file=here("07_model/plot_pident.rds"))
+ggsave(here("06_Graphs/medias_pident.pdf"), width = 12, height = 8)
+
+```
 
 
 
