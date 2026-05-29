@@ -11,7 +11,6 @@ min_qlen         <- params[2] # 197 para base 12, 297 para base 123 -> se especi
 
 # Filtros 
 min_length_prop  <- 0.85
-pident_abs_limit <- 80
 max_evalue       <- 1e-6
 
 
@@ -29,10 +28,10 @@ q_taxid   <- metadata$query_taxid
 accession <- metadata$accession
 b_taxid   <- metadata$blocked_taxid
 
-# Cargar taxonomía verdadera.
-taxonomy_db   <- read_csv(here("taxonomy_now.csv"), show_col_types = FALSE)
-taxonomy_cols <- c("kingdom", "phylum", "class", "order", "family", "genus", "species")
-assigned_cols <- paste0("assigned_", taxonomy_cols)
+# Cargar taxonomía (esta se tiene que cargar previamente en el entorno que se vaya a trabajar)
+taxonomy_db  <- readRDS(here("cache/taxonomy_db.rds"))
+all_lineages <- readRDS(here("cache/all_lineages.rds")) # linajes de staxIDs 
+true_lineages <- readRDS(here("cache/true_lineages.rds"))  # linajes de sec pregunta
 
 # Determinar rango taxonómico del taxID bloqueado
 blocked_info <- taxonomy_db |>
@@ -43,15 +42,6 @@ if (nrow(blocked_info) == 0) {
   blocked_info <- tibble(blocked_rank = "no_block")
 } #los que no tienen ningún rango bloqueado se llaman -> ..._blocked_0000.tsv.
 
-#Linaje de los staxIDs (obtenidos con taxonkit)
-all_lineages <- read_lines(here("03_blast_results/12_good/lineages_12.txt")) |>
-  tibble(raw = _) |>
-  extract(raw, into = c("taxID", "taxonomy"), regex = "^(\\d+)\\s+(.*)$") |>
-  separate(taxonomy, into = taxonomy_cols, sep = ";", fill = "right") |>
-  mutate(across(everything(), str_trim)) |>
-  rename_with(~ paste0("assigned_", .x), .cols = taxonomy_cols) |>
-  mutate(taxID = as.numeric(taxID)) |>
-  distinct(taxID, .keep_all = TRUE)
 
 # Leer BLASTs (10 columnas)
 blast_raw <- read_delim(
@@ -81,7 +71,6 @@ quality_filtered <- blast_with_taxa |>
   drop_na(pident, evalue, length, qlen) |>
   filter(
     length >= (min_length_prop * qlen),
-    pident >= pident_abs_limit,
     evalue <= max_evalue,
     qlen   >= min_qlen
   )
@@ -106,12 +95,12 @@ calculate_taxonomic_precision <- function(row, tax_levels) {
 }
 
 # Verdadero linaje del query
-true_lineage_data <- get_lineage(q_taxid, taxonomy_db) |>
-  enframe() |>
-  filter(name %in% taxonomy_cols) |>
-  pivot_wider(names_from = name, values_from = value) |>
-  add_column(q_taxid = q_taxid, .before = 1) |>
-  rename_with(~ paste0("true_", .x), .cols = -q_taxid)
+true_lineage_data <- true_lineages |>
+  filter(taxID == q_taxid) |>
+  select(all_of(taxonomy_cols)) |>
+  rename_with(~ paste0("true_", .x)) |>
+  add_column(q_taxid = q_taxid, .before = 1)
+
 
 if (nrow(true_lineage_data) == 0) {
   stop("El q_taxid ", q_taxid, " no pudo ser resuelto a un linaje completo.")
