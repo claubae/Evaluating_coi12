@@ -1,6 +1,7 @@
 #Specific files
 01_Raw_data
 02_Scripts/pident_cluster.R
+02_Scripts/preload_taxonomy.R
 
 03_Rmd_files/*docx
 03_Rmd_files/*html
@@ -13,6 +14,7 @@
 05_blast_results/count_flextable.docx
 05_blast_results/n_counts_taxassignment.xlsx
 05_blast_results/all_pident_*
+05_blast_results/*rds
 
 06_Graphs
 
@@ -34,6 +36,7 @@
 .RDataTmp
 .RDataTmp1
 .RDataTmp2
+.RDataTmp3
 03_Rmd_Files/.RDataTmp1
 
 #Mac generated files

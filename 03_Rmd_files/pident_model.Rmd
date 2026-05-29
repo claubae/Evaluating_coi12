@@ -121,10 +121,12 @@ ggplot_pident <- ggplot(plot_pident, aes(x=blocked_rank, y=pident_retransf, colo
   ) +
   theme_bw()+
   theme(
-    axis.text.x  = element_text(angle = 45, hjust = 1, size = 10),
-    axis.text.y  = element_text(size = 10),
-    axis.title   = element_text(size = 12),
-    strip.text   = element_text(size = 11, face = "bold"), 
+    axis.text.x  = element_text(angle = 45, hjust = 1, size = 14),
+    axis.text.y  = element_text(size = 14),
+    axis.title   = element_text(size = 16),
+    legend.title     = element_text(size = 16),  
+    legend.text      = element_text(size = 14), 
+    strip.text   = element_text(size = 16, face = "bold"), 
     legend.position = "bottom"  
   )
 
