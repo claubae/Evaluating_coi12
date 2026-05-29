@@ -1,0 +1,121 @@
+---
+title: "funciones_blast"
+output: word_document
+date: "2026-05-22"
+---
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(here)
+library(tidyverse)
+library(insect)
+library(taxonomizr)
+```
+
+
+Antes de empezar es necesario rescatar los linajes completos de los staxIDs:
+
+```{bash}
+awk '{print $10}' 03_blast_results/123/output_*  | sort | uniq | taxonkit  reformat -I 1 -f "{K};{p};{c};{o};{f};{g};{s}" > lineages_123.txt 
+awk '{print $10}' 03_blast_results/12/output_*  | sort | uniq | taxonkit  reformat -I 1 -f "{K};{p};{c};{o};{f};{g};{s}" > lineages_12.txt 
+```
+
+
+```{r read_blast, eval=FALSE, echo=TRUE}
+#Lee los archivos de blast, delimita las 10 columnas especificadas en el outfmt de BLAST y añade las columnas que informan
+#sobre el rango bloqueado y el accession, necesario para más tarde.
+blast_raw <- read_delim(
+  blast_output,
+  delim      = "\t",
+  col_names  = c("qseqid", "sseqid", "qlen", "slen", "pident",
+                 "mismatch", "evalue", "bitscore", "length", "staxids"),
+  col_types  = cols(.default = col_character()),
+  show_col_types = FALSE
+) |>
+  separate_rows(staxids, sep = ";") |>        # un staxID por fila
+  mutate(
+    qseqid = as.character(q_taxid),
+    across(c(qlen, slen, pident, length, evalue, bitscore, staxids), as.numeric)
+  ) |>
+  add_column(blocked_rank = blocked_info$blocked_rank, .before = 3) |> 
+  add_column(accession = metadata$accession, .before = 2)
+
+```
+
+```{r calidad base, eval=FALSE, echo=TRUE}
+# Se determinan los filtros de calidad base
+min_length_prop  <- 0.85
+pident_abs_limit <- 80
+max_evalue       <- 1e-6
+min_pident_rel   <- 0.99
+
+#Se aplican los filtros de calidad base: 
+quality_filtered <- blast_with_taxa |>
+  drop_na(pident, evalue, length, qlen) |>
+  filter(
+    length >= (min_length_prop * qlen),
+    pident >= pident_abs_limit,
+    evalue <= max_evalue,
+    qlen   >= min_qlen
+  )
+```
+
+
+```{r calculate taxonomic precision, eval=FALSE, echo=TRUE}
+#Este código va línea por línea en los resultados de BLAST y compara las columnas true_{taxonomic_level} (que indican la verdadera taxonomía, aportada por la base de datos de BLAST) y las columnas assigned_{taxonomic_level} (taxonomía del resultado de BLAST, determinado por la función de taxonkit -reformat) y devuelve el rango taxonómico más preciso en el que coinciden. 
+calculate_taxonomic_precision <- function(row, tax_levels) {
+  real_precision <- "Worse"
+  for (level in tax_levels) {
+    t_v <- as.character(row[[paste0("true_", level)]])
+    a_v <- as.character(row[[paste0("assigned_", level)]])
+    if (length(t_v) == 0 || length(a_v) == 0) break
+    if (is.na(t_v) || is.na(a_v)) break
+    if (t_v == a_v) {
+      real_precision <- level
+    } else {
+      break
+    }
+  }
+  return(real_precision)
+}
+```
+
+```{r lca function, eval=FALSE, echo=TRUE}
+#Esta función coge los n mejores resultados de cada BLAST y busca un concenso taxonómico entre ellos, el Lowest Common Ancestor (LCA)
+#Por ejemplo: si los dos mejores resultados son Neocalanus tonsus y Neocalanus robustior, el LCA es Neocalanus. 
+
+calculate_lca <- function(result) {
+
+  filtered <- result |>
+    drop_na(pident, evalue, length, qlen)
+
+  if (nrow(filtered) == 0) return(filtered) #Si ningún hit pasó los filtros de calidad -> devuelve df vacío y se detiene aquí
+  if (nrow(filtered) == 1) return(filtered) #Si no hay más de 1 top candidate no se molesta en calcular nada, devuelve el linaje del único hit que pasó los filtros (y detiene ahí la ejecución de la función)
+
+  taxonomy_cols <- c("kingdom", "phylum", "class", "order", "family", "genus", "species")
+  assigned_cols <- paste0("assigned_", taxonomy_cols)
+
+  tax_matrix <- filtered |>
+    select(all_of(assigned_cols)) |>
+    as.matrix()
+
+  lca_tax <- condenseTaxa(tax_matrix) #Usa función condenseTaxa de taxonomizr para recorrer columna a columna y devolver taxón compartido más preciso
+
+  lca_vec <- as.character(lca_tax)
+  first_na <- which(is.na(lca_vec))[1]
+  if (!is.na(first_na)) lca_vec[first_na:length(lca_vec)] <- NA_character_
+#Rellena con NA el resto de columnas perteneciendo a niveles taxonómicos más bajos que el nivel taxonómico al que pertenece el LCA.
+
+  lca_row <- as.data.frame(as.list(lca_vec)) |>
+    setNames(assigned_cols)
+
+  best_hit_meta <- filtered |>
+    slice_max(order_by = pident, n = 1, with_ties = FALSE) |> #Asigna el mejor pident  
+    select(-dplyr::all_of(assigned_cols))
+
+  bind_cols(best_hit_meta, lca_row)
+}
+```
+
