@@ -13,8 +13,8 @@ Primero hay que instalar Entrez EDirect esearch tool en la terminal.
 
 1a) Configuramos el entorno para la generación de los archivos:
 
-```{r configuración entorno, include=TRUE}
-knitr::opts_chunk$set(echo = TRUE)
+```{r configuración entorno, include=FALSE}
+knitr::opts_chunk$set(eval = FALSE, error = TRUE)
 library(tidyverse)
 library(dplyr)
 library(here)

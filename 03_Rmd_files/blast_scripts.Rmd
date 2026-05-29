@@ -1,0 +1,59 @@
+---
+title: "R Notebook"
+output: word_document
+---
+
+```{r cargar entorno, include=FALSE}
+knitr::opts_chunk$set(eval = FALSE)
+```
+
+
+```{bash}
+#!/bin/bash
+#Este código fue empleado para realizar los BLASTs sin bloqueo taxonómico
+export BLASTDB="/home/meg/dbs" #Se exporta bases de datos (ya sea midori_12 o midori_123 y la base de datos de taxonomía del NCBI)
+#Parámetros línea de comando
+INPUT_DIR=$1
+OUTPUT_DIR=$2
+FILES=(${INPUT_DIR}/*.fasta)  #Se define la ruta de los archivos FASTA con las secuencias pregunta
+blastn \
+      -query "$QUERY_FILE" \
+      -db "$DATABASE" \
+      -num_threads "$SLURM_CPUS_PER_TASK" \
+      -perc_identity 90 \
+      -word_size 11 \
+      -max_target_seqs 500 \
+      -outfmt "6 qseqid sseqid qlen slen pident mismatch evalue bitscore length staxids" \
+      -out "${OUTPUT_DIR}/${BASE_NAME}_results.txt"
+```
+
+
+
+```{bash}
+#!/bin/bash
+#Este código fue empleado para realizar los BLASTs con bloqueo taxonómico de las secuencias pregunta
+#Se definen los parámetros de la línea de comandos: 
+input_file=$1 #archivo FASTA con la secuencia pregunta
+input_taxid=$2 #taxID verdadero de la secuencia pregunta 
+database=$3 #base de datos que se empleará (midori_123 o midori_12)
+blocked_taxID=$4 #taxID bloqueado
+accession=$5 #accession de la secuencia pregunta
+output_folder=$6 #carpeta donde se guardarán los resultados
+cores=$SLURM_CPUS_PER_TASK  #Se definen los recursos computacionales que se emplearán para este código
+
+#Se exporta la carpeta que contiene las bases de datos (tanto las de MIDORI como las de taxonomía del NCBI):
+export BLASTDB="/home/meg/dbs"
+
+blastn \
+-query "$input_file" \
+-db "$database" \
+-num_threads "$cores" \
+-perc_identity 80 \
+-negative_taxids "$blocked_taxID" \
+-word_size 11 \
+-max_target_seqs 500 \
+-outfmt "6 qseqid sseqid qlen slen pident mismatch evalue bitscore length staxids" \
+-out "$outfile"
+
+```
+
