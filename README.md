@@ -1,4 +1,2 @@
-# TFG_COI
-Este TFG tiene como objetivo modificar una base de datos de la citocromo oxidasa I (COI),
-eliminando la 3era base de cada codón de manera a mejorar la asignación taxonómica cuando se emplean 
-los marcadores de Leray en estudios de metabarcoding. 
+# Evaluating_coi12
+Este repositorio contiene los códigos llevados a cabo durante el trabajo de fin de grado (2025-2026). En este se compara la precisión de asignación taxonómica alcanzada por el marcador Leray de la subunidad I de la citocromo oxidasa completo y por el mismo marcador pero eliminando la tercera base de cada codón en situaciones donde la base de datos de referencia tiene lagunas taxonómicas.
