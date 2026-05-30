@@ -15,7 +15,7 @@ library(ape)
 
 Necesitamos primero contar cuántas especies tenemos y mantener solamente las secuencias que pertenezcan a especies con 3 representantes o más.
 
-```{r}
+```{r, eval=FALSE, echo=FALSE}
 seqs <- seqinr::read.fasta(here("02_Raw_data/Query_data/data_123/combined_123.fasta"),
                             seqtype      = "DNA",
                             as.string    = TRUE,
@@ -55,7 +55,7 @@ Para las distancias entre congéneres habría que ver si dentro de este "dataset
 
 El alineamiento se hace con MAFFT:
 
-```{bash}
+```{bash, eval=FALSE, echo=TRUE}
 #!/bin/bash
 INPUT_FASTA=$1
 OUTPUT_FASTA=$2
@@ -65,7 +65,7 @@ mafft --retree 2 --maxiterate 100 "$INPUT_FASTA"> "$OUTPUT_FASTA"
 Ahora que tenemos los resultados podemos analizarlos con el paquete de R spider.
 Primero se requiere de un vector con el nombre de las especies.
 
-```{r vector con el nombre de las especies}
+```{r vector con el nombre de las especies, eval=FALSE, echo=TRUE}
 #Primero leemos el archivo FASTA de manera a definirlo como un DNAbin usando ape:
 
 calanoida_aligned_123 <- read.FASTA(here("99_Query_calanoida/calanoida_aligned_123.fasta"))
@@ -160,35 +160,5 @@ ggplot(df_dist, aes(x = distance, fill = type, color = type)) +
 
 ggsave(here("06_Graphs/capacidad_discriminatoria.pdf"), width = 10, height =10)
 
-```
-
-Y ahora por último nos gustaría ver una comparación del bitscore:
-
-```{r comparar bitscores}
-#Primero hay que unir los dos dfs por lo que hay que crear identificadores únicos:
-join_123 <- join_123 |> 
-mutate(unique_id = paste0(qseqid, "_", accession, "_block_", blocked_rank), .before = 2)
-
-
-join_12 <- join_12 |> 
-mutate(unique_id = paste0(qseqid, "_", accession, "_block_", blocked_rank), .before= 2)
-
-join_123 <- join_123 |> distinct(unique_id, .keep_all = TRUE)
-join_12 <- join_12 |> distinct(unique_id, .keep_all = TRUE)
-
-
-
-df_combined <- left_join(join_123, join_12, by = "unique_id", suffix = c("_full", "_pos12"))
-df_combined$blocked_rank_full<- factor(df_combined$blocked_rank_full, levels =c("no_block", "species", "genus", "family", "order", "class")) 
-
-ggplot(df_combined, aes(x = bitscore_full, y = bitscore_pos12, color = blocked_rank_full)) +
-  geom_point(alpha = 0.3, size= 0.2) +
-  xlim(185, 2000) +
-  ylim(185, 2000)+
-  geom_abline(slope = 1, intercept=0, linetype = "dashed", color = "red") +
-  facet_wrap(~blocked_rank_full) + 
-  theme_bw() +
-  guides(color = "none")
-#ggsave(here("Gráficas/bitscore.pdf"))
 ```
 
