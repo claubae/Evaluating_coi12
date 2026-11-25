@@ -445,7 +445,7 @@ p_len <- ggplot(long_df, aes(length, fill = version)) +
   scale_fill_manual(values = c("123 (original)" = "#0072B2", "12 (coi12)" = "#E69F00")) +
   scale_colour_manual(values = c("123 (original)" = "#0072B2", "12 (coi12)" = "#E69F00")) +
   labs(title = "Longitud de las secuencias antes y después de quitar la 3ª base",
-       subtitle = "Líneas discontinuas: mediana (coi12 ≈ 2/3 de la original)",
+       subtitle = "Líneas discontinuas: mediana (coi12 = aprox. 2/3 de la original)",
        x = "Longitud (pb)", y = "Nº de secuencias", fill = NULL) +
   tema + theme(legend.position = "top")
 p_len
@@ -525,7 +525,8 @@ est_plot <- estadisticas |>
          grupo = ifelse(grepl("\\+2 \\(el", categoria), "Asumido", 
                  ifelse(grepl("Excluidas", categoria), "Excluidas", "Corregidas / desempate")))
 p_ic <- ggplot(est_plot, aes(pct, categoria, colour = grupo)) +
-  geom_errorbarh(aes(xmin = pmax(ic_inf, 1e-4), xmax = ic_sup), height = 0.25, linewidth = 0.8) +
+  geom_errorbar(aes(xmin = pmax(ic_inf, 1e-4), xmax = ic_sup), width = 0.25,
+                linewidth = 0.8, orientation = "y") +
   geom_point(size = 3.5) +
   geom_text(aes(label = sprintf("%s sec. · %s %%",
                                 format(n, big.mark = ".", decimal.mark = ","),
@@ -552,7 +553,7 @@ ggsave(file.path(fig_dir, "08_proporciones_IC95.png"), p_ic, width = 10, height 
 # La región Leray mide ~313 pb. Si una secuencia tiene 1-2 pb de más o de menos
 # al inicio (recorte desigual), su marco se desplaza.
 len_bins <- c(0, 200, 300, 310, 312, 313, 314, 316, 330, Inf)
-len_lab  <- c("<200", "200-299", "300-309", "310-311", "312", "313", "314-315", "316-329", "≥330")
+len_lab  <- c("<200", "200-299", "300-309", "310-311", "312", "313", "314-315", "316-329", ">=330")
 por_long <- ev_rep |>
   filter(kept) |>
   mutate(rango = cut(length, len_bins, labels = len_lab, right = FALSE)) |>
@@ -568,12 +569,12 @@ write_csv(por_long, file.path(out_dir, "fuera_de_marco_por_longitud.csv"))
 p_long <- ggplot(por_long, aes(rango, pct)) +
   geom_col(fill = "#E69F00", alpha = 0.85, width = 0.7) +
   geom_errorbar(aes(ymin = ic_inf, ymax = ic_sup), width = 0.2, colour = "grey30") +
-  geom_text(aes(y = ic_sup, label = sprintf("%s\nde %s", trimws(format(fuera, big.mark = ".")),
-                                            trimws(format(n, big.mark = ".")))),
+  geom_text(aes(y = ic_sup, label = sprintf("%s\nde %s", trimws(format(fuera, big.mark = ".", decimal.mark = ",")),
+                                            trimws(format(n, big.mark = ".", decimal.mark = ",")))),
             vjust = -0.3, size = 2.9, lineheight = 0.9) +
   scale_y_continuous(expand = expansion(mult = c(0, 0.15))) +
   labs(title = "Secuencias fuera del marco +2 según su longitud",
-       subtitle = "Etiqueta: nº fuera de +2 de nº total del rango (rangos con ≥ 30 sec.) · barra = IC 95 % (Wilson)",
+       subtitle = "Etiqueta: nº fuera de +2 de nº total del rango (rangos con 30 o más sec.) · barra = IC 95 % (Wilson)",
        x = "Longitud de la secuencia (pb)", y = "% fuera del marco +2") +
   tema
 p_long
@@ -611,7 +612,7 @@ if (exists("comunes") && any(!iguales)) {
     scale_x_continuous(limits = c(0, 100)) +
     labs(title = "Parecido entre el coi12 de Generate_coi12.sh y el corregido",
          subtitle = sprintf("%d secuencias corregidas · las idénticas (100 %%) son %s",
-                            length(dif), format(sum(iguales), big.mark = ".")),
+                            length(dif), format(sum(iguales), big.mark = ".", decimal.mark = ",")),
          x = "Identidad posición a posición (%)", y = "Nº de secuencias", fill = NULL) +
     tema + theme(legend.position = "top")
   p_ident
