@@ -41,3 +41,9 @@
 
 #Mac generated files
 .DS_Store
+# Datos y resultados de la selección de ORF (pesan demasiado para GitHub)
+data/
+results/
+08_orf_results/
+papers/
+__pycache__/

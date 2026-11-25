@@ -1,0 +1,6 @@
+# Dependencias de los scripts de Python (orf.py y app_orf_gradio.py)
+# Instalar con:  pip install -r 02_Scripts/requirements.txt
+biopython>=1.80
+pandas>=1.5
+matplotlib>=3.6
+gradio>=4.0
