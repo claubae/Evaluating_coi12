@@ -1,4 +1,3 @@
-
 #  extract_regions_coi.R
 
 #  Extrae 3 regiones de COI de cada secuencia query y genera sus versiones
@@ -43,7 +42,7 @@
 # (1) PARÁMETROS
 # -----------------------------------------------------------------------------
 input_file    <- here("data", "calanoida_coi_completo.fasta")  # FASTA o CSV (taxid,seq,accession,nombre)
-out_dir       <- here("data", "regions")
+out_dir       <- here("08_orf_results", "regiones_coi")
 genetic_table <- 5        # mitocondrial invertebrados
 max_mismatch  <- 4        # errores permitidos en cada primer (como -e 4 en cutadapt)
 min_complete  <- 1400     # longitud mínima para considerar el COI "completo"

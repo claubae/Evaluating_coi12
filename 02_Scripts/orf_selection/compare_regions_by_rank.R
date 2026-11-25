@@ -40,7 +40,7 @@ suppressMessages({
 # PASO 1. PARÁMETROS
 # -----------------------------------------------------------------------------
 in_dir  <- here("05_blast_results", "regions")
-out_dir <- here("05_blast_results", "regions", "comparacion")
+out_dir <- here("08_orf_results", "comparacion_regiones")
 dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
 
 levels_tax  <- c("kingdom", "phylum", "class", "order", "family", "genus", "species")

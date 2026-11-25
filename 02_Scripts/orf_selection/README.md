@@ -48,7 +48,35 @@ Si estuviera en +3:    AT | TAT | CTT | CT ...    ->  con +2 se quitaría la bas
 Los scripts reconocen automáticamente si el archivo es FASTA o CSV.
 ⚠️ `data/` **no se sube a GitHub**: los archivos de MIDORI ocupan ~800 MB, por encima del límite de 100 MB por archivo.
 
-## 5. Uso
+## 5. Entorno (recomendado: conda)
+
+En la raíz del repo está **`environment.yml`**, con R 4.3, Python 3.11 y todos los paquetes que usan estos scripts (Biostrings, tidyverse, patchwork, shiny, Biopython, pandas, matplotlib, gradio…). También incluye las herramientas del pipeline original: cutadapt, BLAST y MAFFT. Así todo el grupo trabaja con las mismas versiones.
+
+```bash
+# 1. Instalar conda si no lo tienes (Miniforge: https://github.com/conda-forge/miniforge)
+# 2. Crear el entorno (una sola vez, ~5-15 min)
+conda env create -f environment.yml
+# 3. Activarlo cada vez que vayas a trabajar
+conda activate coi12
+# 4. Ejecutar
+Rscript 02_Scripts/orf_selection/orf_seleccion_coi12.R
+python  02_Scripts/orf_selection/orf.py data/midori_123.fasta
+```
+
+**Usar el entorno desde RStudio.** RStudio usa por defecto el R del sistema. Para que use el del entorno:
+- **Linux / Mac:** abre RStudio desde una terminal con el entorno activado:
+  ```bash
+  conda activate coi12
+  rstudio &            # o: open -a RStudio (Mac)
+  ```
+- **Comprobación:** en la consola de R, `R.home()` debe mostrar una ruta que contenga `envs/coi12`.
+
+**Si el archivo cambia:** `conda env update -f environment.yml --prune`.
+**Para borrar el entorno:** `conda env remove -n coi12`.
+
+> Sin conda también funciona: instala los paquetes a mano (ver "Uso"). Lo que cambia es que cada persona tendrá sus propias versiones.
+
+## 6. Uso
 
 ### R (recomendado)
 ```r
@@ -56,16 +84,17 @@ Los scripts reconocen automáticamente si el archivo es FASTA o CSV.
 # 2. Instalar paquetes (solo la primera vez)
 install.packages(c("here", "readr", "dplyr", "ggplot2", "tidyr", "patchwork"))
 install.packages("BiocManager"); BiocManager::install("Biostrings")
-# 3. Abrir 02_Scripts/orf_seleccion_coi12.R y en el PASO 1 elegir:
+# 3. Abrir 02_Scripts/orf_selection/orf_seleccion_coi12.R y en el PASO 1 elegir:
 archivo <- "all_together_calanoida_123.fasta"   # o "midori_123.fasta"
 # 4. Ejecutar todo (Ctrl+Shift+S) o bloque a bloque (Ctrl+Enter)
 ```
 
 ### Python
 ```bash
-pip install -r 02_Scripts/requirements.txt
-python3 02_Scripts/orf.py data/all_together_calanoida_123.fasta --compare data/all_together_calanoida_12.fasta
-python3 02_Scripts/orf.py data/midori_123.fasta --compare data/midori_12.fasta
+pip install -r 02_Scripts/orf_selection/requirements.txt
+# compara automáticamente con data/*_12.fasta y guarda en 08_orf_results/<nombre>/
+python3 02_Scripts/orf_selection/orf.py data/all_together_calanoida_123.fasta
+python3 02_Scripts/orf_selection/orf.py data/midori_123.fasta
 ```
 
 ### Interfaces web
@@ -78,27 +107,53 @@ install.packages(c("shiny", "bslib", "DT"))
 python3 02_Scripts/app_orf_gradio.py
 ```
 
-## 6. Salidas (`results/orf/`)
+## 7. Salidas (`08_orf_results/<nombre>/`)
+
+Cada archivo analizado tiene su propia carpeta: `08_orf_results/all_together_calanoida/` y `08_orf_results/midori/`.
 
 | Archivo | Contenido |
 |---|---|
 | `<nombre>_12_orf.fasta` | Secuencias coi12, cada una con su marco, una línea por secuencia |
 | `<nombre>_orf_report.tsv` | Una fila por secuencia: `id, length, frame, reason, stops_f1, stops_f2, stops_f3, kept` |
 | `<nombre>_distintas_vs_12.tsv` | Secuencias que cambian respecto a `Generate_coi12.sh` |
-| `figuras/<nombre>/` | 8 figuras: esquema coi12, árbol de decisión, barras, stops, mapa de calor, longitudes y panel resumen |
+| `estadisticas.csv` | Proporción de cada categoría con **IC 95 % (Wilson)** |
+| `fuera_de_marco_por_longitud.csv` | % fuera del marco +2 por rango de longitud, con IC 95 % |
+| `identidad_coi12_antiguo_vs_corregido.csv` | Parecido entre el coi12 antiguo y el corregido de cada secuencia corregida |
+| `figuras/` | Figuras de R (ver tabla siguiente) |
+| `figuras_python/` | Las figuras principales generadas por `orf.py` |
 
-Valores de la columna `reason`: `unico_sin_stops`, `empate_marco_mayoritario`, `empate_orf_mas_largo`, `ambiguo_con_stops` (excluida, posible NUMT) y `demasiado_corta` (menos de 9 pb).
+### Figuras (R, `figuras/`)
 
-## 7. Resultados con los datos del proyecto
+| Figura | Qué enseña |
+|---|---|
+| `11_infografia_resumen.png` | **Una sola imagen con los números clave**: ideal para presentar |
+| `00_panel_resumen.png` | Descripción: marcos, motivos, stops, mapa de calor y longitudes |
+| `00b_panel_estadistica.png` | Estadística: infografía, IC 95 %, longitud e identidad |
+| `01_esquema_coi12.png` | Cómo se quita la 3ª base en una secuencia real |
+| `02_arbol_decision.png` | Criterio de decisión con el nº de secuencias en cada rama |
+| `03`–`07` | Barras de marcos y motivos, stops por marco, mapa de calor de marcos abiertos, histograma de longitudes 123 frente a 12 |
+| `08_proporciones_IC95.png` | % de cada categoría con IC 95 % (escala logarítmica) |
+| `09_fuera_de_marco_por_longitud.png` | ¿Las secuencias desplazadas tienen longitudes raras? |
+| `10_identidad_coi12_antiguo_vs_corregido.png` | Cuánto se equivocaba el coi12 antiguo en las secuencias corregidas |
+
+Valores de `reason`: `unico_sin_stops`, `empate_marco_mayoritario`, `empate_orf_mas_largo`, `ambiguo_con_stops` (excluida, posible NUMT) y `demasiado_corta` (menos de 9 pb).
+
+Los scripts `extract_regions_coi.R` y `compare_regions_by_rank.R` guardan en `08_orf_results/regiones_coi/` y `08_orf_results/comparacion_regiones/`.
+
+## 8. Resultados con los datos del proyecto
 
 | Conjunto | Secuencias | Marco +2 | Otros marcos | Excluidas | Idénticas a la versión 12 actual | Tiempo (R) |
 |---|---|---|---|---|---|---|
 | Calanoida (queries) | 545 | 544 (100 %) | 0 | 1 (6 pb) | 544 / 544 (100 %) | segundos |
 | MIDORI (referencia) | 1.518.144 | 1.518.042 (99,99 %) | 96 | 27 (posibles NUMT) | 1.518.021 / 1.518.117 (99,99 %) | ~2,5 min |
 
-**Interpretación:** la suposición del marco +2 está justificada empíricamente. La selección por secuencia corrige 96 referencias mal recortadas y elimina 27 secuencias dudosas, lo que da una base coi12 algo más limpia.
+**Interpretación estadística (MIDORI):**
+- **El marco +2 es casi universal:** 99,992 % (IC 95 %: 99,990–99,993 %).
+- **Hay 96 secuencias en otro marco** (0,0063 %; IC 95 %: 0,0052–0,0077 %). En esas secuencias el coi12 de `Generate_coi12.sh` solo coincidía en un **30 % de posiciones (mediana)** con el corregido, es decir, era prácticamente aleatorio.
+- **Los desplazamientos se concentran en longitudes de 312 y 314–315 pb** (0,07–0,09 %), y no aparece ninguno en las 637.949 secuencias de 313 pb, la longitud exacta de la región Leray. Esto apunta a indels de 1–2 pb cerca del inicio como causa.
+- **Hay 27 posibles NUMT o errores** (0,0018 %), que quedan excluidos.
 
-## 8. Referencias
+## 9. Referencias
 
 **Marcador y base de datos**
 - Folmer O. et al. (1994). DNA primers for amplification of mitochondrial cytochrome c oxidase subunit I from diverse metazoan invertebrates. *Mol. Mar. Biol. Biotechnol.* 3:294–299.
@@ -110,7 +165,11 @@ Valores de la columna `reason`: `unico_sin_stops`, `empate_marco_mayoritario`, `
 - Song H. et al. (2008). Many species in one: DNA barcoding overestimates the number of species when nuclear mitochondrial pseudogenes are coamplified. *PNAS* 105:13486–13491. https://doi.org/10.1073/pnas.0803076105
 - Xia X. et al. (2003). An index of substitution saturation and its application. *Mol. Phylogenet. Evol.* 26:1–7. https://doi.org/10.1016/S1055-7903(02)00326-3
 
+**Estadística**
+- Brown L.D., Cai T.T. & DasGupta A. (2001). Interval estimation for a binomial proportion. *Statistical Science* 16:101–133. https://doi.org/10.1214/ss/1009213286 (IC de Wilson)
+
 **Herramientas**
+- Grüning B. et al. (2018). Bioconda: sustainable and comprehensive software distribution for the life sciences. *Nature Methods* 15:475–476. https://doi.org/10.1038/s41592-018-0046-7
 - Biostrings (Bioconductor): https://bioconductor.org/packages/Biostrings
 - Cock P.J.A. et al. (2009). Biopython. *Bioinformatics* 25:1422–1423. https://doi.org/10.1093/bioinformatics/btp163
 - Nugent C.M. et al. (2020). coil: an R package for cytochrome c oxidase I (COI) DNA barcode data cleaning, translation, and error evaluation. *Genome* 63:291–305. https://doi.org/10.1139/gen-2019-0206 · https://github.com/CNuge/coil

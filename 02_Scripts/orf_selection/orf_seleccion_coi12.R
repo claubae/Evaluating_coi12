@@ -12,11 +12,12 @@
 #   - midori_123.fasta                 -> FASTA normal (>accession / secuencia)
 #   El script detecta solo el formato.
 
-#  SALIDAS (carpeta data/orf/)
+#  SALIDAS (carpeta 08_orf_results/<nombre>/)
 #   - <nombre>_12_orf.fasta   secuencias coi12 con el marco de cada una
 #   - <nombre>_orf_report.tsv informe: marco, stops por marco, motivo, kept
 #   - <nombre>_distintas_vs_12.tsv  secuencias que cambian respecto a Generate_coi12.sh
-#   - figuras/<nombre>/         gráficos y esquemas (PASO 10)
+#   - figuras/                  gráficos y esquemas (PASO 10) y estadística (PASO 11)
+#   - estadisticas.csv          proporciones con IC 95 % (PASO 11)
 
 #  CRITERIOS BIOLÓGICOS
 #   1. Código mitocondrial de invertebrados (tabla 5).
@@ -53,14 +54,14 @@ archivo        <- "all_together_calanoida_123.fasta"   # <-- cambia aquí
 # archivo      <- "midori_123.fasta"
 
 input_file     <- here("data", archivo)
-out_dir        <- here("results", "orf")
+base_name      <- sub("_?123\\.fasta$", "", archivo)       # p.ej. "all_together_calanoida"
+out_dir        <- here("08_orf_results", base_name)        # una carpeta por archivo
 genetic_table  <- 5       # 5 = mitocondrial invertebrados (2 = vertebrados)
 min_length     <- 9       # secuencias más cortas no se pueden evaluar
 keep_ambiguous <- FALSE   # TRUE = conservar las que tienen stops en los 3 marcos
 
 stopifnot("No encuentro el archivo en data/" = file.exists(input_file))
 dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
-base_name <- sub("_?123\\.fasta$", "", basename(input_file))   # p.ej. "all_together_calanoida"
 
 
 # -----------------------------------------------------------------------------
@@ -251,7 +252,7 @@ if (file.exists(file_12)) {
 library(ggplot2)
 library(tidyr)
 
-fig_dir <- file.path(out_dir, "figuras", base_name)   # una carpeta por archivo
+fig_dir <- file.path(out_dir, "figuras")
 dir.create(fig_dir, showWarnings = FALSE, recursive = TRUE)
 
 tema <- theme_bw(base_size = 12) +
@@ -465,3 +466,210 @@ if (requireNamespace("patchwork", quietly = TRUE)) {
 
 cat("Figuras guardadas en:", fig_dir, "\n")
 list.files(fig_dir)
+
+# =============================================================================
+# PASO 11. ESTADÍSTICA Y FIGURAS DE RESULTADOS (para presentar)
+# =============================================================================
+# Responde a tres preguntas:
+#   1. ¿Qué proporción de secuencias NO está en el marco asumido (+2)?
+#      -> proporciones con intervalo de confianza del 95 % (Wilson)
+#   2. ¿Depende de la longitud de la secuencia?
+#   3. ¿Cuánto cambia el coi12 de las secuencias corregidas respecto al de
+#      Generate_coi12.sh? -> identidad entre coi12 antiguo y corregido
+# Referencia del IC de Wilson: Brown, Cai & DasGupta (2001) Statistical Science
+#   16:101-133. https://doi.org/10.1214/ss/1009213286
+
+# -----------------------------------------------------------------------------
+# 11a. Proporciones con IC 95 % (Wilson)
+# -----------------------------------------------------------------------------
+wilson <- function(x, n, z = 1.96) {
+  p <- x / n; d <- 1 + z^2 / n
+  centro <- (p + z^2 / (2 * n)) / d
+  margen <- z * sqrt(p * (1 - p) / n + z^2 / (4 * n^2)) / d
+  c(pct = 100 * p, ic_inf = 100 * max(0, centro - margen), ic_sup = 100 * min(1, centro + margen))
+}
+
+ev_rep <- report |> filter(reason != "demasiado_corta")
+n_ev   <- nrow(ev_rep)
+categorias <- list(
+  "Marco +2 (el asumido)"            = ev_rep$frame == 2 & ev_rep$kept,
+  "Marco +1 (corregidas)"            = ev_rep$frame == 1 & ev_rep$kept,
+  "Marco +3 (corregidas)"            = ev_rep$frame == 3 & ev_rep$kept,
+  "Fuera de +2 (total corregidas)"   = ev_rep$frame != 2 & ev_rep$kept,
+  "Excluidas: stops en los 3 marcos" = ev_rep$reason == "ambiguo_con_stops",
+  "Resueltas por desempate"          = ev_rep$reason %in% c("empate_marco_mayoritario",
+                                                            "empate_orf_mas_largo")
+)
+estadisticas <- bind_rows(lapply(names(categorias), function(k) {
+  x <- sum(categorias[[k]])
+  tibble(categoria = k, n = x, total = n_ev, !!!as.list(wilson(x, n_ev)),
+         por_millon = 1e6 * x / n_ev)
+}))
+if (exists("comunes")) {
+  estadisticas <- bind_rows(estadisticas, tibble(
+    categoria = "Idénticas a la versión 12 actual", n = sum(iguales), total = length(comunes),
+    !!!as.list(wilson(sum(iguales), length(comunes))),
+    por_millon = 1e6 * sum(iguales) / length(comunes)))
+}
+estadisticas
+write_csv(estadisticas, file.path(out_dir, "estadisticas.csv"))
+
+
+# -----------------------------------------------------------------------------
+# 11b. FIGURA: proporción de cada categoría con IC 95 % (escala logarítmica)
+# -----------------------------------------------------------------------------
+# Escala log porque conviven 99,99 % y 0,002 %: así se ven todas.
+est_plot <- estadisticas |>
+  filter(n > 0, !grepl("Idénticas", categoria)) |>
+  mutate(categoria = factor(categoria, rev(categoria)),
+         grupo = ifelse(grepl("\\+2 \\(el", categoria), "Asumido", 
+                 ifelse(grepl("Excluidas", categoria), "Excluidas", "Corregidas / desempate")))
+p_ic <- ggplot(est_plot, aes(pct, categoria, colour = grupo)) +
+  geom_errorbarh(aes(xmin = pmax(ic_inf, 1e-4), xmax = ic_sup), height = 0.25, linewidth = 0.8) +
+  geom_point(size = 3.5) +
+  geom_text(aes(label = sprintf("%s sec. · %s %%",
+                                format(n, big.mark = ".", decimal.mark = ","),
+                                formatC(signif(pct, ifelse(pct > 99, 6, 2)), format = "fg", decimal.mark = ","))),
+            vjust = -1.1, size = 3.4, show.legend = FALSE) +
+  scale_x_log10(labels = function(x) paste0(format(x, decimal.mark = ",", scientific = FALSE,
+                                                   drop0trailing = TRUE), " %"),
+                expand = expansion(mult = 0.18)) +
+  coord_cartesian(clip = "off") +
+  scale_colour_manual(values = c("Asumido" = "#0072B2", "Corregidas / desempate" = "#E69F00",
+                                 "Excluidas" = "#D55E00")) +
+  labs(title = "¿Cuántas secuencias NO están en el marco +2?",
+       subtitle = sprintf("%s secuencias evaluadas · punto = proporción, barra = IC 95 %% (Wilson)",
+                          format(n_ev, big.mark = ".", decimal.mark = ",")),
+       x = "% de secuencias (escala logarítmica)", y = NULL, colour = NULL) +
+  tema + theme(legend.position = "bottom")
+p_ic
+ggsave(file.path(fig_dir, "08_proporciones_IC95.png"), p_ic, width = 10, height = 5.5, dpi = 300)
+
+
+# -----------------------------------------------------------------------------
+# 11c. FIGURA: ¿las secuencias fuera de +2 tienen longitudes raras?
+# -----------------------------------------------------------------------------
+# La región Leray mide ~313 pb. Si una secuencia tiene 1-2 pb de más o de menos
+# al inicio (recorte desigual), su marco se desplaza.
+len_bins <- c(0, 200, 300, 310, 312, 313, 314, 316, 330, Inf)
+len_lab  <- c("<200", "200-299", "300-309", "310-311", "312", "313", "314-315", "316-329", "≥330")
+por_long <- ev_rep |>
+  filter(kept) |>
+  mutate(rango = cut(length, len_bins, labels = len_lab, right = FALSE)) |>
+  group_by(rango) |>
+  summarise(n = n(), fuera = sum(frame != 2), .groups = "drop") |>
+  filter(n >= 30) |>            # rangos con < 30 secuencias darían IC enormes
+  rowwise() |>
+  mutate(w = list(wilson(fuera, n))) |>
+  mutate(pct = w[["pct"]], ic_inf = w[["ic_inf"]], ic_sup = w[["ic_sup"]]) |>
+  ungroup() |> select(-w)
+write_csv(por_long, file.path(out_dir, "fuera_de_marco_por_longitud.csv"))
+
+p_long <- ggplot(por_long, aes(rango, pct)) +
+  geom_col(fill = "#E69F00", alpha = 0.85, width = 0.7) +
+  geom_errorbar(aes(ymin = ic_inf, ymax = ic_sup), width = 0.2, colour = "grey30") +
+  geom_text(aes(y = ic_sup, label = sprintf("%s\nde %s", trimws(format(fuera, big.mark = ".")),
+                                            trimws(format(n, big.mark = ".")))),
+            vjust = -0.3, size = 2.9, lineheight = 0.9) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.15))) +
+  labs(title = "Secuencias fuera del marco +2 según su longitud",
+       subtitle = "Etiqueta: nº fuera de +2 de nº total del rango (rangos con ≥ 30 sec.) · barra = IC 95 % (Wilson)",
+       x = "Longitud de la secuencia (pb)", y = "% fuera del marco +2") +
+  tema
+p_long
+ggsave(file.path(fig_dir, "09_fuera_de_marco_por_longitud.png"), p_long, width = 9, height = 5, dpi = 300)
+
+
+# -----------------------------------------------------------------------------
+# 11d. FIGURA: ¿cuánto se parecía el coi12 antiguo al corregido?
+# -----------------------------------------------------------------------------
+# Para las secuencias corregidas comparamos posición a posición el coi12 de
+# Generate_coi12.sh con el nuevo. Si el marco estaba mal, el parecido es bajo
+# (se quitaron bases equivocadas). Como referencia, se compara también con un
+# grupo de secuencias que NO cambian (identidad = 100 %).
+identidad <- function(a, b) {
+  L <- min(nchar(a), nchar(b))
+  if (L == 0) return(NA_real_)
+  100 * mean(strsplit(substr(a, 1, L), "")[[1]] == strsplit(substr(b, 1, L), "")[[1]])
+}
+p_ident <- NULL
+if (exists("comunes") && any(!iguales)) {
+  dif <- comunes[!iguales]
+  ident <- tibble(accession = dif,
+                  identidad = mapply(identidad, old_12[dif], new_12[dif]),
+                  marco = report$frame[match(dif, acc(report$id))]) |>
+    mutate(marco = paste0("Marco real +", marco))
+  write_csv(ident, file.path(out_dir, "identidad_coi12_antiguo_vs_corregido.csv"))
+
+  p_ident <- ggplot(ident, aes(identidad, fill = marco)) +
+    geom_histogram(binwidth = 2.5, boundary = 0, colour = "white", alpha = 0.9) +
+    geom_vline(xintercept = median(ident$identidad), linetype = "dashed") +
+    annotate("label", x = median(ident$identidad), y = Inf, vjust = 1.3, size = 3.4,
+             label = sprintf("mediana = %.1f %%", median(ident$identidad))) +
+    scale_fill_manual(values = c("Marco real +1" = "#E69F00", "Marco real +3" = "#009E73",
+                                 "Marco real +2" = "#0072B2")) +
+    scale_x_continuous(limits = c(0, 100)) +
+    labs(title = "Parecido entre el coi12 de Generate_coi12.sh y el corregido",
+         subtitle = sprintf("%d secuencias corregidas · las idénticas (100 %%) son %s",
+                            length(dif), format(sum(iguales), big.mark = ".")),
+         x = "Identidad posición a posición (%)", y = "Nº de secuencias", fill = NULL) +
+    tema + theme(legend.position = "top")
+  p_ident
+  ggsave(file.path(fig_dir, "10_identidad_coi12_antiguo_vs_corregido.png"), p_ident,
+         width = 8, height = 4.8, dpi = 300)
+} else {
+  cat("No hay secuencias corregidas: se omite la figura 10.\n")
+}
+
+
+# -----------------------------------------------------------------------------
+# 11e. INFOGRAFÍA RESUMEN (una sola imagen para enseñar)
+# -----------------------------------------------------------------------------
+fmt <- function(x) format(x, big.mark = ".", decimal.mark = ",")
+get_pct <- function(k) estadisticas$pct[estadisticas$categoria == k]
+tarjetas <- tibble(
+  x = c(1, 2, 3, 1, 2, 3), y = c(2, 2, 2, 1, 1, 1),
+  numero = c(fmt(nrow(report)),
+             paste0(format(round(get_pct("Marco +2 (el asumido)"), 3), decimal.mark = ","), " %"),
+             fmt(sum(ev_rep$frame != 2 & ev_rep$kept)),
+             fmt(sum(ev_rep$reason == "ambiguo_con_stops")),
+             fmt(sum(ev_rep$reason %in% c("empate_marco_mayoritario", "empate_orf_mas_largo"))),
+             if (exists("comunes")) paste0(format(round(100 * mean(iguales), 2), decimal.mark = ","), " %") else "—"),
+  texto = c("secuencias analizadas",
+            "en el marco +2\n(la suposición del TFG)",
+            "corregidas\n(estaban en +1 o +3)",
+            "excluidas\n(stops en los 3 marcos, ¿NUMT?)",
+            "resueltas por desempate\n(varios marcos sin stops)",
+            "idénticas al coi12 de\nGenerate_coi12.sh"),
+  color = c("#4D4D4D", "#0072B2", "#E69F00", "#D55E00", "#56B4E9", "#009E73")
+)
+p_info <- ggplot(tarjetas) +
+  geom_tile(aes(x, y, fill = color), width = 0.94, height = 0.9, alpha = 0.12) +
+  geom_tile(aes(x, y, colour = color), width = 0.94, height = 0.9, fill = NA, linewidth = 1.2) +
+  geom_text(aes(x, y + 0.13, label = numero, colour = color), size = 10, fontface = "bold") +
+  geom_text(aes(x, y - 0.2, label = texto), size = 4, colour = "grey25", lineheight = 0.95) +
+  scale_fill_identity() + scale_colour_identity() +
+  labs(title = paste("Selección del marco de lectura ·", base_name),
+       subtitle = "Código mitocondrial de invertebrados (tabla 5) · marco = el que no tiene codones stop internos",
+       caption = "Evaluating_coi12 · orf_seleccion_coi12.R") +
+  theme_void(base_size = 13) +
+  theme(plot.title = element_text(face = "bold", size = 18, hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5, colour = "grey40"),
+        plot.caption = element_text(colour = "grey50"),
+        plot.margin = margin(15, 15, 10, 15))
+p_info
+ggsave(file.path(fig_dir, "11_infografia_resumen.png"), p_info, width = 12, height = 6, dpi = 300)
+
+
+# -----------------------------------------------------------------------------
+# 11f. PANEL DE ESTADÍSTICA (todo junto)
+# -----------------------------------------------------------------------------
+if (requireNamespace("patchwork", quietly = TRUE)) {
+  library(patchwork)
+  panel_est <- if (!is.null(p_ident)) (p_info) / (p_ic | p_long) / p_ident else p_info / (p_ic | p_long)
+  panel_est <- panel_est + plot_annotation(tag_levels = "A")
+  ggsave(file.path(fig_dir, "00b_panel_estadistica.png"), panel_est,
+         width = 16, height = if (!is.null(p_ident)) 19 else 13, dpi = 200)
+}
+
+cat("\nResultados en:", out_dir, "\n"); print(list.files(out_dir, recursive = TRUE))

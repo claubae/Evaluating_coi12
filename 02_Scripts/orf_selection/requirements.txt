@@ -3,4 +3,5 @@
 biopython>=1.80
 pandas>=1.5
 matplotlib>=3.6
+numpy>=1.23
 gradio>=4.0
