@@ -1,0 +1,57 @@
+# =============================================================================
+#  Entorno conda del proyecto Evaluating_coi12 (selección de ORF y coi12)
+# =============================================================================
+#  Incluye R + Python y todos los paquetes que usan los scripts de
+#  02_Scripts/orf_selection/ (y cutadapt/BLAST/MAFFT del pipeline original).
+#
+#  CREAR EL ENTORNO (una sola vez, ~10-15 min):
+#      conda env create -f environment.yml
+#      (más rápido con mamba:  mamba env create -f environment.yml)
+#
+#  USARLO:
+#      conda activate coi12
+#      Rscript 02_Scripts/orf_selection/orf_seleccion_coi12.R
+#      python 02_Scripts/orf_selection/orf.py data/midori_123.fasta
+#
+#  ACTUALIZARLO si se cambia este archivo:
+#      conda env update -f environment.yml --prune
+#
+#  RStudio: para que RStudio use el R de este entorno, ver README
+#  (02_Scripts/orf_selection/README.md, sección "Entorno").
+#
+#  Documentación: https://docs.conda.io/projects/conda/en/latest/user-guide/tasks/manage-environments.html
+#  Bioconda (paquetes de bioinformática): Grüning et al. (2018) Nature Methods
+#  15:475-476. https://doi.org/10.1038/s41592-018-0046-7
+# =============================================================================
+
+name: coi12
+
+channels:
+  - conda-forge
+  - bioconda
+
+dependencies:
+  # --- R y paquetes -----------------------------------------------------------
+  - r-base=4.3
+  - bioconductor-biostrings      # leer FASTA y traducir (orf_seleccion_coi12.R)
+  - r-here                       # rutas relativas al proyecto
+  - r-tidyverse                  # readr, dplyr, tidyr, ggplot2, purrr...
+  - r-patchwork                  # paneles de figuras
+  - r-shiny                      # app_orf_shiny.R
+  - r-bslib
+  - r-dt
+  - r-irkernel                   # (opcional) usar R en Jupyter
+
+  # --- Python y paquetes ------------------------------------------------------
+  - python=3.11
+  - biopython>=1.80              # orf.py, extract_regions_coi.py
+  - pandas>=1.5
+  - numpy>=1.23
+  - matplotlib>=3.6
+  - scipy                        # compare_regions_by_rank.py (McNemar)
+  - gradio>=4.0                  # app_orf_gradio.py
+
+  # --- Herramientas del pipeline original (opcionales) ------------------------
+  - cutadapt                     # trimmed_fwd.sh / trimmed_rev.sh
+  - blast                        # Makelocaldb.sh / blast_sbatch.sh
+  - mafft                        # mafft_alignment.sh
